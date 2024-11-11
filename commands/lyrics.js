@@ -1,53 +1,50 @@
 const axios = require('axios');
 
 module.exports = {
-  name: 'lyrics',
-  description: 'Fetch song lyrics',
+  name: 'gpt',
+  description: 'Ask a question to GPT-4o',
   author: 'Deku (rest api)',
   async execute(senderId, args, pageAccessToken, sendMessage) {
-    const query = args.join(' ');
+    const prompt = args.join(' ');
+
+    if (!prompt) {
+      return sendMessage(senderId, { text: "Veuillez entrer une question valide." }, pageAccessToken);
+    }
+
     try {
-      const apiUrl = `https://deku-rest-apis.ooguy.com/search/lyrics?q=${encodeURIComponent(query)}`;
+      // Envoyer un message indiquant que GPT-4o est en train de répondre
+      await sendMessage(senderId, { text: '💬 GPT-4o est en train de te répondre ⏳...\n\n─────★─────' }, pageAccessToken);
+
+      // URL pour appeler l'API GPT-4o
+      const apiUrl = `https://joshweb.click/api/gpt-4o?q=Tu_es_une_intelligence_artificielle_plus_avancee_GPT-4o_capable_de_faire_des_recherches_sur_internet_et_repondre_a_toutes_les_questions_tu_es_capable_de_tout_faire_${encodeURIComponent(prompt)}&uid=${senderId}`;
       const response = await axios.get(apiUrl);
-      const result = response.data.result;
+      const text = response.data.result;
 
-      if (result && result.lyrics) {
-        const lyricsMessage = `Title: ${result.title}\nArtist: ${result.artist}\n\n${result.lyrics}`;
+      // Créer un style avec un contour pour la réponse de GPT-4o
+      const formattedResponse = `─────★─────\n` +
+                                `✨ GPT-4o 🤖\n\n${text}\n` +
+                                `─────★─────`;
 
-        // Split the lyrics message into chunks if it exceeds 2000 characters
-        const maxMessageLength = 2000;
-        if (lyricsMessage.length > maxMessageLength) {
-          const messages = splitMessageIntoChunks(lyricsMessage, maxMessageLength);
-          for (const message of messages) {
-            sendMessage(senderId, { text: message }, pageAccessToken);
-          }
-        } else {
-          sendMessage(senderId, { text: lyricsMessage }, pageAccessToken);
-        }
-
-        // Optionally send an image if available
-        if (result.image) {
-          sendMessage(senderId, {
-            attachment: {
-              type: 'image',
-              payload: {
-                url: result.image,
-                is_reusable: true
-              }
-            }
-          }, pageAccessToken);
+      // Gérer les réponses longues de plus de 2000 caractères
+      const maxMessageLength = 2000;
+      if (formattedResponse.length > maxMessageLength) {
+        const messages = splitMessageIntoChunks(formattedResponse, maxMessageLength);
+        for (const message of messages) {
+          await sendMessage(senderId, { text: message }, pageAccessToken);
         }
       } else {
-        console.error('Error: No lyrics found in the response.');
-        sendMessage(senderId, { text: 'Sorry, no lyrics were found for your query.' }, pageAccessToken);
+        await sendMessage(senderId, { text: formattedResponse }, pageAccessToken);
       }
+
     } catch (error) {
-      console.error('Error calling Lyrics API:', error);
-      sendMessage(senderId, { text: 'Sorry, there was an error processing your request.' }, pageAccessToken);
+      console.error('Error calling GPT-4o API:', error);
+      // Message de réponse d'erreur
+      await sendMessage(senderId, { text: 'Désolé, une erreur est survenue. Veuillez réessayer plus tard.' }, pageAccessToken);
     }
   }
 };
 
+// Fonction pour découper les messages en morceaux de 2000 caractères
 function splitMessageIntoChunks(message, chunkSize) {
   const chunks = [];
   for (let i = 0; i < message.length; i += chunkSize) {
