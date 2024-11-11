@@ -1,54 +1,113 @@
 const axios = require('axios');
 
 module.exports = {
-  name: 'gpt',
-  description: 'Ask a question to GPT-4o',
-  author: 'Deku (rest api)',
+  name: 'gpt4',
+  description: 'Pose une question à chatgpt4.',
+  author: 'ArYAN',
+  
   async execute(senderId, args, pageAccessToken, sendMessage) {
-    const prompt = args.join(' ');
+    const query = args.join(' ');
 
-    if (!prompt) {
+    if (!query) {
       return sendMessage(senderId, { text: "Veuillez entrer une question valide." }, pageAccessToken);
     }
 
     try {
-      // Envoyer un message indiquant que GPT-4o est en train de répondre
-      await sendMessage(senderId, { text: '💬 GPT-4o est en train de te répondre ⏳...\n\n─────★─────' }, pageAccessToken);
+      // Envoyer un message indiquant que l'IA réfléchit
+      const thinkingMessage = await sendMessage(senderId, { text: '🪐rtm gpt4 réfléchit⏳... 🤔' }, pageAccessToken);
 
-      // URL pour appeler l'API GPT-4o
-      const apiUrl = `https://joshweb.click/api/gpt-4o?q=Tu_es_une_intelligence_artificielle_plus_avancee_GPT-4o_capable_de_faire_des_recherches_sur_internet_et_repondre_a_toutes_les_questions_tu_es_capable_de_tout_faire_${encodeURIComponent(prompt)}&uid=${senderId}`;
-      const response = await axios.get(apiUrl);
-      const text = response.data.result;
+      // Appel de la fonction pour obtenir la réponse la plus rapide parmi les services
+      const fastestAnswer = await getFastestValidAnswer(query, senderId);
 
-      // Créer un style avec un contour pour la réponse de GPT-4o
-      const formattedResponse = `─────★─────\n` +
-                                `✨ GPT-4o 🤖\n\n${text}\n` +
-                                `─────★─────`;
+      // Envoyer la réponse formatée
+      const formattedResponse = `🇲🇬 | rtm ai gpt4 ⏳\n━━━━━━━━━━━━━━━━\n${fastestAnswer}\n━━━━━━━━━━━━━━━━`;
+      await sendMessage(senderId, { text: formattedResponse }, pageAccessToken);
 
-      // Gérer les réponses longues de plus de 2000 caractères
-      const maxMessageLength = 2000;
-      if (formattedResponse.length > maxMessageLength) {
-        const messages = splitMessageIntoChunks(formattedResponse, maxMessageLength);
-        for (const message of messages) {
-          await sendMessage(senderId, { text: message }, pageAccessToken);
-        }
-      } else {
-        await sendMessage(senderId, { text: formattedResponse }, pageAccessToken);
-      }
+      // Supprimer le message d'attente
+      await thinkingMessage.delete();
 
     } catch (error) {
-      console.error('Error calling GPT-4o API:', error);
-      // Message de réponse d'erreur
-      await sendMessage(senderId, { text: 'Désolé, une erreur est survenue. Veuillez réessayer plus tard.' }, pageAccessToken);
+      console.error('Erreur lors de la requête à l\'IA :', error);
+      await sendMessage(senderId, { text: '' }, pageAccessToken);
+    }
+  },
+
+  async handleImage(senderId, imageUrl, prompt, sendMessage, pageAccessToken) {
+    try {
+      // Envoyer un message indiquant que l'IA réfléchit sur l'image
+      const thinkingMessage = await sendMessage(senderId, { text: '🖼️ Analyzing the image... Please wait ⏳' }, pageAccessToken);
+
+      // Appel de la fonction pour obtenir la description de l'image
+      const description = await getFastestValidAnswerForImage(imageUrl, senderId);
+
+      // Envoyer la description formatée
+      const formattedResponse = `🖼️ | Image Analysis:\n━━━━━━━━━━━━━━━━\n${description}\n━━━━━━━━━━━━━━━━`;
+      await sendMessage(senderId, { text: formattedResponse }, pageAccessToken);
+
+      // Supprimer le message d'attente
+      await thinkingMessage.delete();
+      
+    } catch (error) {
+      console.error('Erreur lors de l\'analyse de l\'image avec l\'IA :', error);
+      await sendMessage(senderId, { text: 'Erreur lors de l\'analyse de l\'image.' }, pageAccessToken);
     }
   }
 };
 
-// Fonction pour découper les messages en morceaux de 2000 caractères
-function splitMessageIntoChunks(message, chunkSize) {
-  const chunks = [];
-  for (let i = 0; i < message.length; i += chunkSize) {
-    chunks.push(message.slice(i, i + chunkSize));
+// Fonction pour appeler un service AI
+async function callService(service, prompt, senderID) {
+  if (service.isCustom) {
+    try {
+      const response = await axios.get(`${service.url}?${service.param.prompt}=${encodeURIComponent(prompt)}`);
+      return response.data.answer || response.data;
+    } catch (error) {
+      console.error(`Erreur du service personnalisé ${service.url}: ${error.message}`);
+      throw new Error(`Erreur du service ${service.url}: ${error.message}`);
+    }
+  } else {
+    const params = {};
+    for (const [key, value] of Object.entries(service.param)) {
+      params[key] = key === 'uid' ? senderID : encodeURIComponent(prompt);
+    }
+    const queryString = new URLSearchParams(params).toString();
+    try {
+      const response = await axios.get(`${service.url}?${queryString}`);
+      return response.data.answer || response.data;
+    } catch (error) {
+      console.error(`Erreur du service ${service.url}: ${error.message}`);
+      throw new Error(`Erreur du service ${service.url}: ${error.message}`);
+    }
   }
-  return chunks;
 }
+
+// Fonction pour obtenir la réponse la plus rapide parmi les services pour un texte
+async function getFastestValidAnswer(prompt, senderID) {
+  const services = [
+    { url: 'https://gpt-four.vercel.app/gpt', param: { prompt: 'prompt' }, isCustom: true }
+  ];
+
+  const promises = services.map(service => callService(service, prompt, senderID));
+  const results = await Promise.allSettled(promises);
+  for (const result of results) {
+    if (result.status === 'fulfilled' && result.value) {
+      return result.value;
+    }
+  }
+  throw new Error('Tous les services ont échoué à fournir une réponse valide');
+}
+
+// Fonction pour obtenir la réponse la plus rapide parmi les services pour une image
+async function getFastestValidAnswerForImage(imageUrl, senderID) {
+  const services = [
+    { url: 'https://gpt-four.vercel.app/gpt', param: { prompt: 'imageUrl' }, isCustom: true }
+  ];
+
+  const promises = services.map(service => callService(service, imageUrl, senderID));
+  const results = await Promise.allSettled(promises);
+  for (const result of results) {
+    if (result.status === 'fulfilled' && result.value) {
+      return result.value;
+    }
+  }
+  throw new Error('Tous les services ont échoué à analyser l\'image');
+    }
