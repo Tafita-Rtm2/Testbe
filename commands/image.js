@@ -1,55 +1,54 @@
-const axios = require('axios');
+const axios = require("axios");
 
 module.exports = {
-  name: 'bing',
-  description: 'Ask a question to the Bing Copilot',
-  author: 'RN',
-  
-  async execute(senderId, args, pageAccessToken, sendMessage) {
-    const id = senderId;
-    const query = args.join(' ') || "Hello! How can I assist you today?"; // Default message if no input
-    
-    // Envoyer un message indiquant que Copilot est en train de répondre
-    await sendMessage(senderId, { text: '🌊✨ | 𝙲𝚘𝚙𝚒𝚕𝚘𝚝 est en train de répondre...⏳' }, pageAccessToken);
+  name: 'black',
+  description: 'Blackbox AI assistant by Kenlie Navacilla Jugarap',
+  author: 'KENLIEPLAYS',
 
-    // Récupérer la réponse précédente pour cet utilisateur (suivi de conversation)
-    const previousResponse = previousResponses.get(id);
-    let modifiedQuery = query;
-    if (previousResponse) {
-      modifiedQuery = `Follow-up on: "${previousResponse}"\nUser reply: "${query}"`;
+  async execute(senderId, args, pageAccessToken, sendMessage) {
+    const query = args.join(" ").toLowerCase() || "How can I help you?";
+    const defaultResponse = "🗃 | 𝙱𝚕𝚊𝚌𝚔 𝙱𝚘𝚡 | \n━━━━━━━━━━━━━━━━\nHello! How can I help you?\n━━━━━━━━━━━━━━━━";
+
+    if (query === "hello" || query === "hi") {
+      return await sendMessage(senderId, { text: defaultResponse }, pageAccessToken);
     }
 
-    try {
-      // Appel de l'API avec la requête
-      const response = await callBingAPI(modifiedQuery, id);
-      const formattedResponse = formatResponse(response);
+    // Envoyer un message indiquant que Blackbox est en train de répondre
+    await sendMessage(senderId, { text: '🗃 | 𝙱𝚕𝚊𝚌𝚔 𝙱𝚘𝚡 |\nVeuillez patienter pendant la réponse...' }, pageAccessToken);
 
-      // Envoie la réponse formatée (gestion des messages longs)
+    try {
+      const responseMessage = await getMessage(args.join(" "));
+      const formattedResponse = formatResponse(responseMessage);
+
+      // Envoyer la réponse formatée (gestion des messages longs)
       await handleLongResponse(formattedResponse, senderId, pageAccessToken, sendMessage);
 
-      // Stocker la réponse pour les suivis
-      previousResponses.set(id, response);
-
     } catch (error) {
-      console.error("Erreur avec l'API Copilot :", error);
-      await sendMessage(senderId, { text: 'Désolé, une erreur est survenue lors de la connexion avec Copilot. Veuillez réessayer plus tard.' }, pageAccessToken);
+      console.error("Erreur avec l'API Blackbox :", error);
+      await sendMessage(senderId, { text: 'Erreur : Une erreur est survenue lors de la connexion à Blackbox. Veuillez réessayer plus tard.' }, pageAccessToken);
     }
   }
 };
 
-// Map pour stocker les réponses précédentes de chaque utilisateur
-const previousResponses = new Map();
-
-// Fonction pour appeler l'API Bing Copilot
-async function callBingAPI(query, id) {
-  const apiUrl = `https://www.samirxpikachu.run.place/bing?message=${encodeURIComponent(query)}&mode=1&uid=${id}`;
-  const response = await axios.get(apiUrl);
-  return response.data || "Aucune réponse obtenue de l'API.";
+// Fonction pour appeler l'API Blackbox
+async function getMessage(yourMessage) {
+  try {
+    const res = await axios.get(`https://api.kenliejugarap.com/blackbox?text=${encodeURIComponent(yourMessage)}`);
+    let response = res.data.response || "Aucune réponse de l'API.";
+    
+    // Supprimer la partie concernant le clic sur le lien
+    response = response.replace(/\n\nIs this answer helpful to you\? Kindly click the link below\nhttps:\/\/click2donate\.kenliejugarap\.com\n\(Clicking the link and clicking any ads or button and wait for 30 seconds \(3 times\) everyday is a big donation and help to us to maintain the servers, last longer, and upgrade servers in the future\)/, '');
+    
+    return response;
+  } catch (error) {
+    console.error("Erreur lors de l'obtention du message :", error);
+    throw error;
+  }
 }
 
 // Fonction pour formater la réponse avec un style et un contour
 function formatResponse(text) {
-  return `🌊✨ | 𝙲𝚘𝚙𝚒𝚕𝚘𝚝\n━━━━━━━━━━━━━━━━\n${text}\n━━━━━━━━━━━━━━━━`;
+  return `🗃 | 𝙱𝚕𝚊𝚌𝚔 𝙱𝚘𝚡 |\n━━━━━━━━━━━━━━━━\n${text}\n━━━━━━━━━━━━━━━━`;
 }
 
 // Fonction pour découper les messages en morceaux de 2000 caractères
