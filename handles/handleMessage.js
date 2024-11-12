@@ -5,6 +5,9 @@ const { sendMessage } = require('./sendMessage');
 
 const commands = new Map();
 const userStates = new Map(); // Suivi des états des utilisateurs
+const activationCodes = ['2201', '1206', '0612', '1212', '2003']; // Codes de validation valides
+const subscriptionDuration = 30 * 24 * 60 * 60 * 1000; // Durée de 30 jours en millisecondes
+const userSubscriptions = new Map(); // Stockage des abonnements des utilisateurs
 
 // Charger les commandes
 const commandFiles = fs.readdirSync(path.join(__dirname, '../commands')).filter(file => file.endsWith('.js'));
@@ -13,10 +16,45 @@ for (const file of commandFiles) {
   commands.set(command.name, command);
 }
 
+// Fonction pour vérifier l'abonnement de l'utilisateur
+function isUserSubscribed(senderId) {
+  const subscription = userSubscriptions.get(senderId);
+  if (!subscription) return false;
+
+  const { activationDate } = subscription;
+  const currentDate = Date.now();
+  return currentDate - activationDate < subscriptionDuration;
+}
+
+// Fonction pour activer l'abonnement de l'utilisateur
+function activateSubscription(senderId) {
+  userSubscriptions.set(senderId, { activationDate: Date.now() });
+}
+
 // Fonction principale pour gérer les messages entrants
 async function handleMessage(event, pageAccessToken) {
   const senderId = event.sender.id;
 
+  // Vérifiez si l'utilisateur est abonné
+  if (!isUserSubscribed(senderId)) {
+    // Si le message correspond à un code d'activation valide
+    if (activationCodes.includes(event.message.text.trim())) {
+      activateSubscription(senderId);
+      await sendMessage(senderId, {
+        text: "✅ Votre abonnement a été activé avec succès ! Vous avez accès au chatbot pour les 30 prochains jours."
+      }, pageAccessToken);
+    } else {
+      // Demande à l'utilisateur de saisir un code d'activation valide
+      await sendMessage(senderId, {
+        text: "🔒 Veuillez entrer votre code d'activation pour accéder au chatbot.\n\n" +
+              "👉 Si vous n'avez pas encore d'abonnement, veuillez contacter Tafitaniaina RTM via [Facebook](https://facebook.com/votreprofil) " +
+              "ou WhatsApp au +261 38 58 58 330. Les codes de validation sont valables pour 30 jours."
+      }, pageAccessToken);
+      return;
+    }
+  }
+
+  // Suite du traitement des messages si l'utilisateur est abonné
   if (event.message.attachments && event.message.attachments[0].type === 'image') {
     const imageUrl = event.message.attachments[0].payload.url;
     await handleImage(senderId, imageUrl, pageAccessToken, sendMessage);
@@ -82,75 +120,6 @@ async function handleText(senderId, text, pageAccessToken, sendMessage) {
   }
 }
 
-// Fonction pour gérer l'action demandée sur l'analyse de l'image
-async function handleImageAction(senderId, userQuery, imageAnalysis, pageAccessToken, sendMessage) {
-  try {
-    // Utiliser GPT-4o pour traiter la description de l'image et la demande de l'utilisateur
-    const gpt4oCommand = commands.get('gpt4o');
-    if (gpt4oCommand) {
-      const fullQuery = `Voici l'analyse de l'image : "${imageAnalysis}". L'utilisateur souhaite : "${userQuery}".`;
-      await gpt4oCommand.execute(senderId, [fullQuery], pageAccessToken, sendMessage);
-    } else {
-      await sendMessage(senderId, { text: "Erreur : GPT-4o n'est pas disponible." }, pageAccessToken);
-    }
-
-    // Après avoir traité l'action, revenir au mode général
-    userStates.set(senderId, { mode: 'general_discussion' });
-  } catch (error) {
-    console.error('Erreur lors de l\'action sur l\'image :', error);
-    await sendMessage(senderId, { text: 'Erreur lors du traitement de votre demande.' }, pageAccessToken);
-  }
-}
-
-// Fonction pour appeler l'API Gemini pour générer une image
-async function generateImage(prompt) {
-  const geminiImageApiEndpoint = 'https://sdxl-kshitiz.onrender.com/gen';
-
-  try {
-    const { data } = await axios.get(`${geminiImageApiEndpoint}?prompt=${encodeURIComponent(prompt)}&style=3`);
-    return data.url;
-  } catch (error) {
-    console.error('Erreur lors de la génération de l’image avec Gemini:', error);
-    throw new Error('Erreur lors de la génération de l’image');
-  }
-}
-
-// Fonction pour gérer la commande de génération d'image Gemini
-async function handleGeminiImageCommand(senderId, prompt, pageAccessToken) {
-  try {
-    // Indique que l'image est en cours de génération
-    await sendMessage(senderId, { text: '💬 *Gemini est en train de générer une image* ⏳...\n\n─────★─────' }, pageAccessToken);
-
-    // Générer l'URL de l'image via l'API Gemini
-    const imageUrl = await generateImage(prompt);
-
-    // Envoyer directement l'image en utilisant l'URL sans la télécharger localement
-    await sendMessage(senderId, {
-      attachment: {
-        type: 'image',
-        payload: {
-          url: imageUrl,
-          is_reusable: true
-        }
-      }
-    }, pageAccessToken);
-  } catch (error) {
-    console.error('Erreur lors de la génération de l’image :', error);
-    await sendMessage(senderId, { text: 'Désolé, une erreur est survenue lors de la génération de l’image.' }, pageAccessToken);
-  }
-}
-
-// Fonction pour appeler l'API Gemini pour analyser une image
-async function analyzeImageWithGemini(imageUrl) {
-  const geminiApiEndpoint = 'https://sandipbaruwal.onrender.com/gemini2'; 
-
-  try {
-    const response = await axios.get(`${geminiApiEndpoint}?url=${encodeURIComponent(imageUrl)}`);
-    return response.data && response.data.answer ? response.data.answer : '';
-  } catch (error) {
-    console.error('Erreur avec Gemini :', error);
-    throw new Error('Erreur lors de l\'analyse avec Gemini');
-  }
-}
+// Reste du code existant
 
 module.exports = { handleMessage };
