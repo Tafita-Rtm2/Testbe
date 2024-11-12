@@ -36,14 +36,14 @@ async function handleMessage(event, pageAccessToken) {
       if (validCodes.includes(messageText)) {
         // Si l'utilisateur envoie un code valide, activer l'abonnement
         userSubscriptions.set(senderId, Date.now());
-        await sendMessage(senderId, { text: "✅ *Abonnement activé avec succès !* Vous pouvez maintenant utiliser le chatbot sans restriction pendant 30 jours." }, pageAccessToken);
+        await sendMessage(senderId, { text: "✅ Abonnement activé avec succès !* Vous pouvez maintenant utiliser le chatbot sans restriction pendant 30 jours." }, pageAccessToken);
       } else if (canAskFreeQuestion(senderId)) {
         // Permettre jusqu'à 2 questions gratuites par jour
         incrementFreeQuestionCount(senderId);
         await handleText(senderId, messageText, pageAccessToken, sendMessage);
       } else {
         // L'utilisateur a atteint sa limite de questions gratuites
-        await sendMessage(senderId, { text: "🚫 👋  Oups ! Tu as utilisé tes 2 questions gratuites pour aujourd'huiPour continuer à profiter de mes services, tu peux : Obtenir un code d'activation en t'abonnant à RTM Tafitaniaina  ➡️  https://www.facebook.com/manarintso.niainaOu  via WhatsApp  📱  au +261385858330.Une fois que tu as ton code d'activation, envoie-le moi  📧  et je t'activerai ! ." }, pageAccessToken);
+        await sendMessage(senderId, { text: "🚫 👋  Oups ! Tu as utilisé tes 2 questions gratuites pour aujourd'huiPour continuer à profiter de mes services, tu peux : Obtenir un code d'activation en t'abonnant à RTM Tafitaniaina  ➡️  https://www.facebook.com/manarintso.niaina Ou  via WhatsApp  📱  au +261385858330.Une fois que tu as ton code d'activation, envoie-le moi  📧  et je t'activerai ! ." }, pageAccessToken);
       }
     } else {
       // L'utilisateur est abonné, traiter les messages texte normalement
