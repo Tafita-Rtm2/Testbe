@@ -1,7 +1,7 @@
 const axios = require('axios');
 
 module.exports = {
-  name: 'gpt',
+  name: 'gpt4o',
   description: 'Ask a question to GPT-4o',
   author: 'Deku & coffee (fallback API)',
   
