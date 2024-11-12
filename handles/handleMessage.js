@@ -43,7 +43,7 @@ async function handleMessage(event, pageAccessToken) {
         await handleText(senderId, messageText, pageAccessToken, sendMessage);
       } else {
         // L'utilisateur a atteint sa limite de questions gratuites
-        await sendMessage(senderId, { text: "🚫 👋  Oups ! Tu as utilisé tes 2 questions gratuites pour aujourd'huiPour continuer à profiter de mes services, tu peux : Obtenir un code d'activation en t'abonnant à RTM Tafitaniaina  ➡️  https://www.facebook.com/manarintso.niaina Ou  via WhatsApp  📱  au +261385858330.Une fois que tu as ton code d'activation, envoie-le moi  📧  et je t'activerai ! ." }, pageAccessToken);
+        await sendMessage(senderId, { text: "🚫 👋  Oups ! Tu as utilisé tes 2 questions gratuites pour aujourd'huiPour continuer à profiter de mes services, tu peux : Obtenir un code d'activation en t'abonnant à RTM Tafitaniaina  ➡️  https://www.facebook.com/manarintso.niaina Ou  via WhatsApp  📱  au +261385858330 .Une fois que tu as ton code d'activation, envoie-le moi  📧  et je t'activerai ! ." }, pageAccessToken);
       }
     } else {
       // L'utilisateur est abonné, traiter les messages texte normalement
