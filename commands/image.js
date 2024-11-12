@@ -1,41 +1,55 @@
 const axios = require('axios');
 
 module.exports = {
-  name: 'black',
-  description: 'Interacts with the Blackbox Conversational AI.',
-  author: 'Coffee',
+  name: 'bing',
+  description: 'Ask a question to the Bing Copilot',
+  author: 'RN',
   
   async execute(senderId, args, pageAccessToken, sendMessage) {
-    const query = args.join(' ') || 'hello'; // Utilise la saisie de l'utilisateur ou le défaut "hello"
+    const id = senderId;
+    const query = args.join(' ') || "Hello! How can I assist you today?"; // Default message if no input
     
-    // Envoyer un message indiquant que Blackbox est en train de répondre
-    await sendMessage(senderId, { text: '🗃 | 𝙱𝚕𝚊𝚌𝚔𝚋𝚘𝚡 est en train de répondre...⏳' }, pageAccessToken);
+    // Envoyer un message indiquant que Copilot est en train de répondre
+    await sendMessage(senderId, { text: '🌊✨ | 𝙲𝚘𝚙𝚒𝚕𝚘𝚝 est en train de répondre...⏳' }, pageAccessToken);
+
+    // Récupérer la réponse précédente pour cet utilisateur (suivi de conversation)
+    const previousResponse = previousResponses.get(id);
+    let modifiedQuery = query;
+    if (previousResponse) {
+      modifiedQuery = `Follow-up on: "${previousResponse}"\nUser reply: "${query}"`;
+    }
 
     try {
-      // Appel de l'API
-      const response = await callBlackboxAPI(query);
+      // Appel de l'API avec la requête
+      const response = await callBingAPI(modifiedQuery, id);
       const formattedResponse = formatResponse(response);
 
-      // Vérifie et envoie la réponse, même pour les longs messages
+      // Envoie la réponse formatée (gestion des messages longs)
       await handleLongResponse(formattedResponse, senderId, pageAccessToken, sendMessage);
 
+      // Stocker la réponse pour les suivis
+      previousResponses.set(id, response);
+
     } catch (error) {
-      console.error("Erreur avec l'API Blackbox :", error);
-      await sendMessage(senderId, { text: 'Une erreur est survenue lors de la connexion avec Blackbox. Veuillez réessayer plus tard.' }, pageAccessToken);
+      console.error("Erreur avec l'API Copilot :", error);
+      await sendMessage(senderId, { text: 'Désolé, une erreur est survenue lors de la connexion avec Copilot. Veuillez réessayer plus tard.' }, pageAccessToken);
     }
   }
 };
 
-// Fonction pour appeler l'API Blackbox
-async function callBlackboxAPI(query) {
-  const apiUrl = `https://openapi-idk8.onrender.com/blackbox?chat=${encodeURIComponent(query)}`;
+// Map pour stocker les réponses précédentes de chaque utilisateur
+const previousResponses = new Map();
+
+// Fonction pour appeler l'API Bing Copilot
+async function callBingAPI(query, id) {
+  const apiUrl = `https://www.samirxpikachu.run.place/bing?message=${encodeURIComponent(query)}&mode=1&uid=${id}`;
   const response = await axios.get(apiUrl);
-  return response.data?.response || "Aucune réponse obtenue de l'API.";
+  return response.data || "Aucune réponse obtenue de l'API.";
 }
 
 // Fonction pour formater la réponse avec un style et un contour
 function formatResponse(text) {
-  return `🗃 | 𝙱𝚕𝚊𝚌𝚔 𝙱𝚘𝚡 |\n━━━━━━━━━━━━━━━━\n${text}\n━━━━━━━━━━━━━━━━`;
+  return `🌊✨ | 𝙲𝚘𝚙𝚒𝚕𝚘𝚝\n━━━━━━━━━━━━━━━━\n${text}\n━━━━━━━━━━━━━━━━`;
 }
 
 // Fonction pour découper les messages en morceaux de 2000 caractères
