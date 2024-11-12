@@ -5,9 +5,10 @@ const { sendMessage } = require('./sendMessage');
 
 const commands = new Map();
 const userStates = new Map(); // Suivi des états des utilisateurs
-const activationCodes = ['2201', '1206', '0612', '1212', '2003']; // Codes de validation valides
-const subscriptionDuration = 30 * 24 * 60 * 60 * 1000; // Durée de 30 jours en millisecondes
-const userSubscriptions = new Map(); // Stockage des abonnements des utilisateurs
+const userSubscriptions = new Map(); // Enregistre les abonnements utilisateurs
+const userFreeQuestions = new Map(); // Enregistre le nombre de questions gratuites par utilisateur par jour
+const validCodes = ["2201", "1206", "0612", "1212", "2003"];
+const subscriptionDuration = 30 * 24 * 60 * 60 * 1000; // Durée d'abonnement : 30 jours en millisecondes
 
 // Charger les commandes
 const commandFiles = fs.readdirSync(path.join(__dirname, '../commands')).filter(file => file.endsWith('.js'));
@@ -16,51 +17,51 @@ for (const file of commandFiles) {
   commands.set(command.name, command);
 }
 
-// Fonction pour vérifier l'abonnement de l'utilisateur
-function isUserSubscribed(senderId) {
-  const subscription = userSubscriptions.get(senderId);
-  if (!subscription) return false;
-
-  const { activationDate } = subscription;
-  const currentDate = Date.now();
-  return currentDate - activationDate < subscriptionDuration;
-}
-
-// Fonction pour activer l'abonnement de l'utilisateur
-function activateSubscription(senderId) {
-  userSubscriptions.set(senderId, { activationDate: Date.now() });
-}
-
 // Fonction principale pour gérer les messages entrants
 async function handleMessage(event, pageAccessToken) {
   const senderId = event.sender.id;
 
-  // Vérifiez si l'utilisateur est abonné
-  if (!isUserSubscribed(senderId)) {
-    // Si le message correspond à un code d'activation valide
-    if (activationCodes.includes(event.message.text.trim())) {
-      activateSubscription(senderId);
-      await sendMessage(senderId, {
-        text: "✅ Votre abonnement a été activé avec succès ! Vous avez accès au chatbot pour les 30 prochains jours."
-      }, pageAccessToken);
-    } else {
-      // Demande à l'utilisateur de saisir un code d'activation valide
-      await sendMessage(senderId, {
-        text: "🔒 Veuillez entrer votre code d'activation pour accéder au chatbot.\n\n" +
-              "👉 Si vous n'avez pas encore d'abonnement, veuillez contacter Tafitaniaina RTM via [Facebook](https://facebook.com/votreprofil) " +
-              "ou WhatsApp au +261 38 58 58 330. Les codes de validation sont valables pour 30 jours."
-      }, pageAccessToken);
-      return;
-    }
-  }
+  // Vérifier si l'utilisateur est abonné
+  const isSubscribed = checkSubscription(senderId);
 
-  // Suite du traitement des messages si l'utilisateur est abonné
   if (event.message.attachments && event.message.attachments[0].type === 'image') {
+    // Gérer les images sans vérifier l'abonnement
     const imageUrl = event.message.attachments[0].payload.url;
     await handleImage(senderId, imageUrl, pageAccessToken, sendMessage);
   } else if (event.message.text) {
     const messageText = event.message.text.trim();
-    await handleText(senderId, messageText, pageAccessToken, sendMessage);
+
+    // Si l'utilisateur n'est pas abonné et n'a pas envoyé un code d'activation, gérer les questions gratuites
+    if (!isSubscribed) {
+      if (validCodes.includes(messageText)) {
+        // Si l'utilisateur envoie un code valide, activer l'abonnement
+        userSubscriptions.set(senderId, Date.now());
+        await sendMessage(senderId, { text: "✅ *Abonnement activé avec succès !* Vous pouvez maintenant utiliser le chatbot sans restriction pendant 30 jours." }, pageAccessToken);
+      } else if (canAskFreeQuestion(senderId)) {
+        // Permettre jusqu'à 2 questions gratuites par jour
+        incrementFreeQuestionCount(senderId);
+        await handleText(senderId, messageText, pageAccessToken, sendMessage);
+      } else {
+        // L'utilisateur a atteint sa limite de questions gratuites
+        await sendMessage(senderId, { text: "🚫 Vous avez utilisé vos 2 questions gratuites pour aujourd'hui. Veuillez entrer un code d'activation ou faire un abonnement." }, pageAccessToken);
+      }
+    } else {
+      // L'utilisateur est abonné, traiter les messages texte normalement
+      await handleText(senderId, messageText, pageAccessToken, sendMessage);
+    }
+  }
+}
+
+// Fonction pour vérifier l'abonnement
+function checkSubscription(senderId) {
+  if (!userSubscriptions.has(senderId)) return false;
+  const subscriptionTime = userSubscriptions.get(senderId);
+  if (Date.now() - subscriptionTime < subscriptionDuration) {
+    return true;
+  } else {
+    // Supprimer l'abonnement s'il a expiré
+    userSubscriptions.delete(senderId);
+    return false;
   }
 }
 
@@ -120,6 +121,60 @@ async function handleText(senderId, text, pageAccessToken, sendMessage) {
   }
 }
 
-// Reste du code existant
+// Fonction pour gérer l'action demandée sur l'analyse de l'image
+async function handleImageAction(senderId, userQuery, imageAnalysis, pageAccessToken, sendMessage) {
+  try {
+    // Utiliser GPT-4o pour traiter la description de l'image et la demande de l'utilisateur
+    const gpt4oCommand = commands.get('gpt4o');
+    if (gpt4oCommand) {
+      const fullQuery = `Voici l'analyse de l'image : "${imageAnalysis}". L'utilisateur souhaite : "${userQuery}".`;
+      await gpt4oCommand.execute(senderId, [fullQuery], pageAccessToken, sendMessage);
+    } else {
+      await sendMessage(senderId, { text: "Erreur : GPT-4o n'est pas disponible." }, pageAccessToken);
+    }
+
+    // Après avoir traité l'action, revenir au mode général
+    userStates.set(senderId, { mode: 'general_discussion' });
+  } catch (error) {
+    console.error('Erreur lors de l\'action sur l\'image :', error);
+    await sendMessage(senderId, { text: 'Erreur lors du traitement de votre demande.' }, pageAccessToken);
+  }
+}
+
+// Fonction pour vérifier et augmenter le nombre de questions gratuites
+function canAskFreeQuestion(senderId) {
+  const today = new Date().toDateString();
+  const userData = userFreeQuestions.get(senderId) || { count: 0, date: today };
+
+  if (userData.date !== today) {
+    // Réinitialiser le compteur quotidien
+    userFreeQuestions.set(senderId, { count: 1, date: today });
+    return true;
+  } else if (userData.count < 2) {
+    return true;
+  }
+  return false;
+}
+
+// Fonction pour incrémenter le nombre de questions gratuites
+function incrementFreeQuestionCount(senderId) {
+  const today = new Date().toDateString();
+  const userData = userFreeQuestions.get(senderId) || { count: 0, date: today };
+  userData.count += 1;
+  userFreeQuestions.set(senderId, userData);
+}
+
+// Fonction pour appeler l'API Gemini pour analyser une image
+async function analyzeImageWithGemini(imageUrl) {
+  const geminiApiEndpoint = 'https://sandipbaruwal.onrender.com/gemini2';
+
+  try {
+    const response = await axios.get(`${geminiApiEndpoint}?url=${encodeURIComponent(imageUrl)}`);
+    return response.data && response.data.answer ? response.data.answer : '';
+  } catch (error) {
+    console.error('Erreur avec Gemini :', error);
+    throw new Error('Erreur lors de l\'analyse avec Gemini');
+  }
+}
 
 module.exports = { handleMessage };
