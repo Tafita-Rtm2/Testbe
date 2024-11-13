@@ -16,7 +16,7 @@ module.exports = {
     await sendMessage(senderId, { text: '💬 GPT-4o est en train de te répondre ⏳...\n\n─────★─────' }, pageAccessToken);
 
     try {
-      // Appel de la première API
+      // Appel de la première API (remplacée par l'URL de la deuxième API dans le premier code)
       const response = await callPrimaryAPI(prompt, senderId);
       const formattedResponse = formatResponse(response);
 
@@ -26,7 +26,7 @@ module.exports = {
     } catch (error) {
       console.error('Erreur avec l\'API primaire GPT-4o:', error);
       
-      // Tentative avec la deuxième API en cas d'erreur
+      // Tentative avec la deuxième API en cas d'erreur (remplacée par l'URL de la deuxième API dans le deuxième code)
       try {
         const fallbackResponse = await callSecondaryAPI(prompt, senderId);
         const formattedFallbackResponse = formatResponse(fallbackResponse);
@@ -41,18 +41,18 @@ module.exports = {
   }
 };
 
-// Fonction pour appeler l'API primaire avec gestion des réponses manquantes
+// Fonction pour appeler l'API primaire (avec l'URL de la deuxième API dans le premier code)
 async function callPrimaryAPI(prompt, senderId) {
-  const apiUrl = `https://joshweb.click/api/gpt-4o?q=Tu_es_une_intelligence_artificielle_plus_avancee_GPT-4o_capable_de_faire_des_recherches_sur_internet_et_repondre_a_toutes_les_questions_tu_es_capable_de_tout_faire_${encodeURIComponent(prompt)}&uid=${senderId}`;
+  const apiUrl = `https://joshweb.click/api/gpt-4o?q=${encodeURIComponent(prompt)}&uid=${senderId}`;
   const response = await axios.get(apiUrl);
   return response.data?.result || "Aucune réponse obtenue de l'API primaire.";
 }
 
-// Fonction pour appeler l'API secondaire avec gestion des réponses manquantes
+// Fonction pour appeler l'API secondaire (avec l'URL de l'API dans le deuxième code)
 async function callSecondaryAPI(prompt, senderId) {
-  const apiUrl = `https://joshweb.click/api/gpt-4o?q=${encodeURIComponent(prompt)}&uid=${senderId}`;
+  const apiUrl = `https://api.kenliejugarap.com/blackbox?text=${encodeURIComponent(prompt)}`;
   const response = await axios.get(apiUrl);
-  return response.data?.result || "Aucune réponse obtenue de l'API secondaire.";
+  return response.data?.response || "Aucune réponse obtenue de l'API secondaire.";
 }
 
 // Fonction pour formater la réponse avec un style et un contour
