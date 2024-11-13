@@ -16,43 +16,53 @@ module.exports = {
     await sendMessage(senderId, { text: '💬 GPT-4o est en train de te répondre ⏳...\n\n─────★─────' }, pageAccessToken);
 
     try {
-      // Appel de la première API (remplacée par l'URL de la deuxième API dans le premier code)
+      // Appel de la première API
       const response = await callPrimaryAPI(prompt, senderId);
-      const formattedResponse = formatResponse(response);
 
-      // Vérifier et envoyer la réponse, même pour les longs messages
+      // Si la réponse est vide ou nulle, passer à la deuxième API
+      if (!response || response.trim() === '') {
+        console.log("Première API a échoué ou a renvoyé une réponse vide, passage à la deuxième API.");
+        throw new Error("Première API a échoué ou a renvoyé une réponse vide.");
+      }
+
+      const formattedResponse = formatResponse(response);
       await handleLongResponse(formattedResponse, senderId, pageAccessToken, sendMessage);
 
     } catch (error) {
-      console.error('Erreur avec l\'API primaire GPT-4o:', error);
-      
-      // Tentative avec la deuxième API en cas d'erreur (remplacée par l'URL de la deuxième API dans le deuxième code)
+      console.error('Erreur avec l\'API primaire GPT-4o ou réponse vide:', error);
+
+      // Tentative avec la deuxième API en cas d'erreur ou de réponse vide de la première API
       try {
         const fallbackResponse = await callSecondaryAPI(prompt, senderId);
+
+        // Si la réponse de la deuxième API est vide, envoyer un message d'erreur par défaut
+        if (!fallbackResponse || fallbackResponse.trim() === '') {
+          throw new Error("Deuxième API a échoué ou a renvoyé une réponse vide.");
+        }
+
         const formattedFallbackResponse = formatResponse(fallbackResponse);
-        
         await handleLongResponse(formattedFallbackResponse, senderId, pageAccessToken, sendMessage);
-        
+
       } catch (fallbackError) {
-        console.error('Erreur avec l\'API secondaire GPT-4o:', fallbackError);
-        await sendMessage(senderId, { text: 'Désolé, une erreur est survenue avec les deux API. Veuillez réessayer plus tard.' }, pageAccessToken);
+        console.error('Erreur avec l\'API secondaire GPT-4o ou réponse vide:', fallbackError);
+        await sendMessage(senderId, { text: 'Désolé, je n\'ai pas pu obtenir de réponse pour cette question.' }, pageAccessToken);
       }
     }
   }
 };
 
-// Fonction pour appeler l'API primaire (avec l'URL de la deuxième API dans le premier code)
+// Fonction pour appeler l'API primaire
 async function callPrimaryAPI(prompt, senderId) {
   const apiUrl = `https://joshweb.click/api/gpt-4o?q=${encodeURIComponent(prompt)}&uid=${senderId}`;
   const response = await axios.get(apiUrl);
-  return response.data?.result || "Aucune réponse obtenue de l'API primaire.";
+  return response.data?.result || "";
 }
 
-// Fonction pour appeler l'API secondaire (avec l'URL de l'API dans le deuxième code)
+// Fonction pour appeler l'API secondaire
 async function callSecondaryAPI(prompt, senderId) {
   const apiUrl = `https://api.kenliejugarap.com/blackbox?text=${encodeURIComponent(prompt)}`;
   const response = await axios.get(apiUrl);
-  return response.data?.response || "Aucune réponse obtenue de l'API secondaire.";
+  return response.data?.response || "";
 }
 
 // Fonction pour formater la réponse avec un style et un contour
