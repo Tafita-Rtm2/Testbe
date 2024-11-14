@@ -1,53 +1,54 @@
-const axios = require('axios');
+const axios = require("axios");
+const ytdl = require("ytdl-core");
+const yts = require("yt-search");
 
 module.exports = {
-  name: 'gmage',
-  description: 'Search and send images from Google',
-  usage: 'gmage [search query]',
-  author: 'Cruizex',
+  name: "video",
+  description: "Download a YouTube video",
+  usage: "video [video name]",
+  author: "AceGun",
 
-  async execute(senderId, args, pageAccessToken, sendMessage) {
-    if (args.length === 0) {
-      return sendMessage(senderId, { text: '📷 Utilisez le format : gmage [mot-clé pour la recherche]' }, pageAccessToken);
+  async execute({ api, event }) {
+    const input = event.body.trim();
+    const videoName = input.replace(/^video\s+/i, ''); // Enlève le préfixe "video"
+
+    if (!videoName) {
+      return api.sendMessage("Veuillez spécifier un nom de vidéo.", event.threadID);
     }
-
-    const searchQuery = args.join(' ');
-    const apiKey = 'AIzaSyC_gYM4M6Fp1AOYra_K_-USs0SgrFI08V0';
-    const searchEngineID = 'e01c6428089ea4702';
 
     try {
-      // Envoi d'un message pour indiquer que la recherche est en cours
-      sendMessage(senderId, { text: '📷 Recherche de vos images en cours... 🔍' }, pageAccessToken);
-
-      // Requête pour rechercher des images sur Google
-      const response = await axios.get('https://www.googleapis.com/customsearch/v1', {
-        params: {
-          key: apiKey,
-          cx: searchEngineID,
-          q: searchQuery,
-          searchType: 'image',
-        },
-      });
-
-      // Limite le nombre d'images renvoyées à 5
-      const images = response.data.items.slice(0, 5);
-
-      if (images.length > 0) {
-        const attachments = images.map(image => ({
-          type: 'image',
-          payload: { url: image.link, is_reusable: true },
-        }));
-
-        // Envoi des images en tant que pièces jointes
-        sendMessage(senderId, {
-          attachment: attachments.length === 1 ? attachments[0] : { type: 'template', payload: { template_type: 'media', elements: attachments } },
-        }, pageAccessToken);
-      } else {
-        sendMessage(senderId, { text: '📷 Aucune image trouvée pour cette recherche.' }, pageAccessToken);
+      api.sendMessage("⏳ Recherche de votre vidéo, veuillez patienter...", event.threadID);
+      
+      // Recherche de la vidéo sur YouTube
+      const searchResults = await yts(videoName);
+      if (!searchResults.videos.length) {
+        return api.sendMessage("Aucune vidéo trouvée.", event.threadID);
       }
+
+      const video = searchResults.videos[0];
+      const videoUrl = video.url;
+      const stream = ytdl(videoUrl, { filter: "audioandvideo" });
+      const fileName = `${event.senderID}.mp4`;
+      const filePath = `${__dirname}/cache/${fileName}`;
+
+      // Téléchargement de la vidéo
+      stream.pipe(require('fs').createWriteStream(filePath));
+      stream.on('end', async () => {
+        const fileSize = require('fs').statSync(filePath).size;
+        if (fileSize > 26214400) { // Limite de 25 Mo
+          require('fs').unlinkSync(filePath);
+          return api.sendMessage('Le fichier est trop volumineux pour être envoyé (plus de 25 Mo).', event.threadID);
+        }
+
+        // Envoi de la vidéo
+        await api.sendMessage({
+          body: `🎥 Voici votre vidéo :\n\n🔹 Titre : ${video.title}\n⏰ Durée : ${video.duration.timestamp}`,
+          attachment: require('fs').createReadStream(filePath),
+        }, event.threadID, () => require('fs').unlinkSync(filePath));
+      });
     } catch (error) {
-      console.error('Erreur lors de la recherche d\'images :', error);
-      sendMessage(senderId, { text: 'Désolé, une erreur est survenue lors de la recherche d\'images.' }, pageAccessToken);
+      console.error('Erreur lors du traitement de la commande vidéo :', error);
+      api.sendMessage("Une erreur est survenue lors du téléchargement de la vidéo.", event.threadID);
     }
-  },
+  }
 };
