@@ -16,7 +16,7 @@ module.exports = {
     }
 
     // Envoyer un message indiquant que GPT-4o est en train de répondre
-    await sendMessage(senderId, { text: '💬 GPT-4o est en train de te répondre ⏳...\n\n─────★─────' }, pageAccessToken);
+    await sendMessage(senderId, { text: '💬 GPT-4o est en train de te répondre ⏳...\n─────★─────' }, pageAccessToken);
 
     try {
       // Appel de la première API (nouvelle API ajoutée)
