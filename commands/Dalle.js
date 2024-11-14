@@ -1,61 +1,59 @@
 const axios = require('axios');
-const { sendMessage } = require('../handles/sendMessage');
-const fs = require('fs');
 
-// Lecture du token d'accès pour l'envoi des messages
-const token = fs.readFileSync('token.txt', 'utf8');
+const config = {
+  name: 'gmage',
+  description: 'Search and send images from Google',
+  usage: 'gmage [search query]',
+  author: 'Cruizex',
+};
+
+/** @type {TOnCallCommand} */
+async function onCall({ senderId, args, pageAccessToken, sendMessage }) {
+  if (args.length === 0) {
+    return sendMessage(senderId, { text: '📷 Utilisez le format : gmage [mot-clé pour la recherche]' }, pageAccessToken);
+  }
+
+  const searchQuery = args.join(' ');
+  const apiKey = 'AIzaSyC_gYM4M6Fp1AOYra_K_-USs0SgrFI08V0';
+  const searchEngineID = 'e01c6428089ea4702';
+
+  try {
+    // Envoi d'un message pour indiquer que la recherche est en cours
+    sendMessage(senderId, { text: '📷 Recherche de vos images en cours... 🔍' }, pageAccessToken);
+
+    // Requête pour rechercher des images sur Google
+    const response = await axios.get('https://www.googleapis.com/customsearch/v1', {
+      params: {
+        key: apiKey,
+        cx: searchEngineID,
+        q: searchQuery,
+        searchType: 'image',
+      },
+    });
+
+    // Limite le nombre d'images renvoyées à 5 pour éviter l'envoi de trop de fichiers
+    const images = response.data.items.slice(0, 5);
+
+    if (images.length > 0) {
+      const attachments = images.map(image => ({
+        type: 'image',
+        payload: { url: image.link, is_reusable: true },
+      }));
+
+      // Envoi des images en tant que pièces jointes
+      sendMessage(senderId, {
+        attachment: attachments.length === 1 ? attachments[0] : { type: 'template', payload: { template_type: 'media', elements: attachments } },
+      }, pageAccessToken);
+    } else {
+      sendMessage(senderId, { text: '📷 Aucune image trouvée pour cette recherche.' }, pageAccessToken);
+    }
+  } catch (error) {
+    console.error('Erreur lors de la recherche d\'images :', error);
+    sendMessage(senderId, { text: 'Désolé, une erreur est survenue lors de la recherche d\'images.' }, pageAccessToken);
+  }
+}
 
 module.exports = {
-  name: 'flux',
-  description: 'Generate an AI-based image with a custom prompt and options',
-  author: 'Samir Œ',
-  usage: 'flux <prompt> --ar 1:1 --model 2',
-
-  async execute(senderId, args) {
-    const pageAccessToken = token;
-    let prompt = args.join(" ");
-    let aspectRatio = "1:1";
-    let model = "2";
-
-    // Analyser les arguments pour récupérer les options d'aspect ratio et modèle
-    for (let i = 0; i < args.length; i++) {
-      if (args[i] === "--ar" && args[i + 1]) {
-        aspectRatio = args[i + 1];
-      }
-      if (args[i] === "--model" && args[i + 1]) {
-        model = args[i + 1];
-      }
-    }
-
-    if (!prompt) {
-      return await sendMessage(senderId, { text: 'Please provide a prompt for the image generator.' }, pageAccessToken);
-    }
-
-    await sendMessage(senderId, { text: '🧑‍🎨 Generating your image, please wait...' }, pageAccessToken);
-
-    // Définir la liste des URLs d'API pour basculer en cas d'échec
-    const apiUrls = [
-      'https://samirxpikachuio.onrender.com/fluxfl',
-      'https://www.samirxpikachu.run.place/fluxfl',
-      'http://samirxzy.onrender.com/fluxfl'
-    ];
-
-    for (const baseUrl of apiUrls) {
-      try {
-        const apiUrl = `${baseUrl}?prompt=${encodeURIComponent(prompt)}&ratio=${aspectRatio}&model=${model}`;
-        const response = await axios.get(apiUrl, { responseType: 'stream' });
-
-        if (response.data) {
-          await sendMessage(senderId, {
-            attachment: { type: 'image', payload: { stream: response.data } }
-          }, pageAccessToken);
-          return;
-        }
-      } catch (error) {
-        console.error(`Error with API ${baseUrl}:`, error);
-      }
-    }
-
-    await sendMessage(senderId, { text: "All APIs failed. Please try again later or join https://t.me/Architectdevs for support." }, pageAccessToken);
-  }
+  config,
+  onCall,
 };
