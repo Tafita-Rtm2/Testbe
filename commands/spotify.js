@@ -1,7 +1,9 @@
 const axios = require('axios');
+const { speak } = require('google-translate-api-x');
+const { writeFileSync, createReadStream } = require('fs');
+const form = require('form-data');
 
 module.exports = {
-
   name: 'gpt4o',
 
   description: 'Ask a question to GPT-4o',
@@ -22,7 +24,6 @@ module.exports = {
       // Appel de la première API (nouvelle API ajoutée)
       const response = await callNewPrimaryAPI(prompt, senderId);
 
-      // Si la réponse est vide ou nulle, passer à la deuxième API
       if (!response || response.trim() === '') {
         console.log("Nouvelle API primaire a échoué ou a renvoyé une réponse vide, passage à la deuxième API.");
         throw new Error("Nouvelle API primaire a échoué ou a renvoyé une réponse vide.");
@@ -30,11 +31,11 @@ module.exports = {
 
       const formattedResponse = formatResponse(response);
       await handleLongResponse(formattedResponse, senderId, pageAccessToken, sendMessage);
+      await convertAndSendAudio(formattedResponse, senderId, pageAccessToken);
 
     } catch (error) {
       console.error('Erreur avec la nouvelle API primaire ou réponse vide:', error);
 
-      // Tentative avec la deuxième API
       try {
         const fallbackResponse = await callPrimaryAPI(prompt, senderId);
 
@@ -45,11 +46,11 @@ module.exports = {
 
         const formattedFallbackResponse = formatResponse(fallbackResponse);
         await handleLongResponse(formattedFallbackResponse, senderId, pageAccessToken, sendMessage);
+        await convertAndSendAudio(formattedFallbackResponse, senderId, pageAccessToken);
 
       } catch (secondaryError) {
         console.error('Erreur avec la deuxième API ou réponse vide:', secondaryError);
 
-        // Tentative avec la troisième API en cas d'erreur ou de réponse vide des deux premières
         try {
           const finalFallbackResponse = await callSecondaryAPI(prompt, senderId);
 
@@ -59,6 +60,7 @@ module.exports = {
 
           const formattedFinalFallbackResponse = formatResponse(finalFallbackResponse);
           await handleLongResponse(formattedFinalFallbackResponse, senderId, pageAccessToken, sendMessage);
+          await convertAndSendAudio(formattedFinalFallbackResponse, senderId, pageAccessToken);
 
         } catch (finalError) {
           console.error('Erreur avec la troisième API ou réponse vide:', finalError);
@@ -114,5 +116,41 @@ async function handleLongResponse(response, senderId, pageAccessToken, sendMessa
     }
   } else {
     await sendMessage(senderId, { text: response }, pageAccessToken);
+  }
+}
+
+// Fonction pour convertir le texte en audio et l'envoyer
+async function convertAndSendAudio(text, senderId, pageAccessToken) {
+  try {
+    // Conversion du texte en audio
+    const audioData = await speak(text, { to: 'fr' }); // Langue : français
+
+    // Enregistrement du fichier audio en MP3
+    const audioFileName = 'audio.mp3';
+    writeFileSync(audioFileName, audioData, { encoding: 'base64' });
+
+    // Création d'un stream pour l'audio
+    const audioStream = createReadStream(audioFileName);
+
+    // Création du formulaire pour envoyer l'audio via Messenger
+    const formData = new form();
+    formData.append('recipient', JSON.stringify({ id: senderId }));
+    formData.append('message', JSON.stringify({
+      attachment: {
+        type: 'audio',
+        payload: {},
+      }
+    }));
+    formData.append('filedata', audioStream);
+
+    // Faire la requête POST pour envoyer l'audio via Messenger
+    await axios.post(`https://graph.facebook.com/v17.0/me/messages?access_token=${pageAccessToken}`, formData, {
+      headers: {
+        ...formData.getHeaders(),
+      }
+    });
+
+  } catch (error) {
+    console.error("Erreur lors de la conversion ou de l'envoi de l'audio:", error);
   }
 }
