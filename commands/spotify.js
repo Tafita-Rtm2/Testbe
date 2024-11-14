@@ -1,96 +1,74 @@
-const axios = require('axios');
 const { speak } = require('google-translate-api-x');
 const { writeFileSync, createReadStream } = require('fs');
+const axios = require('axios');
 const form = require('form-data');
 const fs = require('fs');
 
 const token = fs.readFileSync('token.txt', 'utf8');
 
 module.exports = {
-  name: 'gpt4o',
-  description: 'Ask a question to GPT-4o',
-  author: 'Deku & coffee (cascade API with three attempts)',
+  name: 'gpt4',
+  description: 'Assistant IA',
+  author: 'Tata',
 
-  async execute(senderId, args, pageAccessToken, sendMessage) {
-    const prompt = args.join(' ');
+  async execute(senderId, args, sendMessage) {
+    const pageAccessToken = token;
+    const prompt = args.join(' ') || 'Bonjour, comment puis-je vous aider ?';
 
-    if (!prompt) {
-      return sendMessage(senderId, { text: "Veuillez entrer une question valide." }, pageAccessToken);
-    }
-
-    // Envoyer un message indiquant que GPT-4o est en train de répondre
-    await sendMessage(senderId, { text: '💬 GPT-4o est en train de te répondre ⏳...\n\n─────★─────' }, pageAccessToken);
+    // Message d'attente
+    await sendMessage(senderId, { text: '💬 L\'assistant est en train de te répondre ⏳...\n\n─────★─────' }, pageAccessToken);
 
     try {
-      // Tentative avec la première API
-      const response = await callPrimaryAPI1(prompt, senderId);
+      // Appel de la première API
+      let response = await callPrimaryAPI(prompt, senderId);
 
-      // Si la réponse est vide ou nulle, passer à la deuxième API
+      // Si la réponse est vide, on passe à la deuxième API
       if (!response || response.trim() === '') {
         console.log("Première API a échoué ou a renvoyé une réponse vide, passage à la deuxième API.");
-        throw new Error("Première API a échoué ou a renvoyé une réponse vide.");
+        response = await callSecondaryAPI(prompt, senderId);
       }
 
+      // Si la deuxième API est aussi vide, on passe à la troisième API
+      if (!response || response.trim() === '') {
+        console.log("Deuxième API a échoué ou a renvoyé une réponse vide, passage à la troisième API.");
+        response = await callTertiaryAPI(prompt, senderId);
+      }
+
+      // Si toutes les APIs échouent, envoyer un message d'erreur par défaut
+      if (!response || response.trim() === '') {
+        throw new Error("Toutes les APIs ont échoué ou ont renvoyé une réponse vide.");
+      }
+
+      // Formatage et envoi de la réponse
       const formattedResponse = formatResponse(response);
       await handleLongResponse(formattedResponse, senderId, pageAccessToken, sendMessage);
-      await sendAudioResponse(formattedResponse, senderId, pageAccessToken);
+
+      // Convertir la réponse en audio et l'envoyer
+      await sendAudioResponse(response, senderId, pageAccessToken);
 
     } catch (error) {
-      console.error('Erreur avec la première API ou réponse vide:', error);
-
-      // Tentative avec la deuxième API
-      try {
-        const response = await callPrimaryAPI2(prompt, senderId);
-
-        if (!response || response.trim() === '') {
-          console.log("Deuxième API a échoué ou a renvoyé une réponse vide, passage à la troisième API.");
-          throw new Error("Deuxième API a échoué ou a renvoyé une réponse vide.");
-        }
-
-        const formattedResponse = formatResponse(response);
-        await handleLongResponse(formattedResponse, senderId, pageAccessToken, sendMessage);
-        await sendAudioResponse(formattedResponse, senderId, pageAccessToken);
-
-      } catch (error) {
-        console.error('Erreur avec la deuxième API ou réponse vide:', error);
-
-        // Tentative avec la troisième API
-        try {
-          const response = await callPrimaryAPI3(prompt, senderId);
-
-          if (!response || response.trim() === '') {
-            throw new Error("Troisième API a échoué ou a renvoyé une réponse vide.");
-          }
-
-          const formattedResponse = formatResponse(response);
-          await handleLongResponse(formattedResponse, senderId, pageAccessToken, sendMessage);
-          await sendAudioResponse(formattedResponse, senderId, pageAccessToken);
-
-        } catch (error) {
-          console.error('Erreur avec la troisième API ou réponse vide:', error);
-          await sendMessage(senderId, { text: 'Désolé, je n\'ai pas pu obtenir de réponse pour cette question.' }, pageAccessToken);
-        }
-      }
+      console.error('Erreur avec les API ou réponse vide:', error);
+      await sendMessage(senderId, { text: 'Désolé, je n\'ai pas pu obtenir de réponse pour cette question.' }, pageAccessToken);
     }
   }
 };
 
-// Fonction pour appeler la première API (du premier code)
-async function callPrimaryAPI1(prompt, senderId) {
+// Fonction pour appeler la première API
+async function callPrimaryAPI(prompt, senderId) {
   const apiUrl = `https://ccprojectapis.ddns.net/api/gpt4turbo?q=${encodeURIComponent(prompt)}&id=${senderId}`;
   const response = await axios.get(apiUrl);
   return response.data?.response || "";
 }
 
-// Fonction pour appeler la deuxième API (première API du deuxième code)
-async function callPrimaryAPI2(prompt, senderId) {
+// Fonction pour appeler la deuxième API
+async function callSecondaryAPI(prompt, senderId) {
   const apiUrl = `https://joshweb.click/api/gpt-4o?q=${encodeURIComponent(prompt)}&uid=${senderId}`;
   const response = await axios.get(apiUrl);
   return response.data?.result || "";
 }
 
-// Fonction pour appeler la troisième API (deuxième API du deuxième code)
-async function callPrimaryAPI3(prompt, senderId) {
+// Fonction pour appeler la troisième API
+async function callTertiaryAPI(prompt, senderId) {
   const apiUrl = `https://api.kenliejugarap.com/blackbox?text=${encodeURIComponent(prompt)}`;
   const response = await axios.get(apiUrl);
   return response.data?.response || "";
@@ -98,7 +76,7 @@ async function callPrimaryAPI3(prompt, senderId) {
 
 // Fonction pour formater la réponse avec un style et un contour
 function formatResponse(text) {
-  return `─────★─────\n✨ GPT-4o 🤖\n\n${text}\n─────★─────`;
+  return `─────★─────\n✨ Assistant IA 🤖\n\n${text}\n─────★─────`;
 }
 
 // Fonction pour découper les messages en morceaux de 2000 caractères
@@ -123,11 +101,10 @@ async function handleLongResponse(response, senderId, pageAccessToken, sendMessa
   }
 }
 
-// Fonction pour envoyer la réponse sous forme audio unique
-async function sendAudioResponse(response, senderId, pageAccessToken) {
+// Fonction pour convertir la réponse en audio et l'envoyer
+async function sendAudioResponse(text, senderId, pageAccessToken) {
   try {
-    // Convertir la réponse entière en audio
-    const res = await speak(response, { to: 'fr' });
+    const res = await speak(text, { to: 'fr' }); // Langue de conversion à ajuster selon les besoins
 
     // Enregistrer le fichier audio en MP3
     const audioFileName = 'audio.mp3';
@@ -153,8 +130,7 @@ async function sendAudioResponse(response, senderId, pageAccessToken) {
         ...formData.getHeaders(),
       }
     });
-
   } catch (error) {
-    console.error("Erreur lors de la conversion ou de l'envoi de l'audio :", error);
+    console.error('Erreur lors de la génération de l\'audio:', error);
   }
 }
