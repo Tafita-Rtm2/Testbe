@@ -21,45 +21,52 @@ module.exports = {
         return sendMessage(senderId, { text: 'Aucune commande disponible.' }, pageAccessToken);
       }
 
-      const commands = [];
-      const quickReplies = commandFiles.map(file => {
-        try {
+      if (args.length > 0) {
+        // Affiche les détails d'une commande spécifique si un argument est donné
+        const commandName = args[0].toLowerCase();
+        const commandFile = commandFiles.find(file => {
           const command = require(path.join(commandsDir, file));
+          return command.name.toLowerCase() === commandName;
+        });
 
-          // Vérifie que la commande a bien un nom et une description
-          if (!command.name || !command.description) {
-            commands.push(`❌ La commande dans le fichier ${file} est invalide.`);
-            return null;
-          }
+        if (commandFile) {
+          const command = require(path.join(commandsDir, commandFile));
+          const commandDetails = `
+━━━━━━━━━━━━━━
+𝙲𝚘𝚖𝚖𝚊𝚗𝚍 𝙽𝚊𝚖𝚎: ${command.name}
+𝙳𝚎𝚜𝚌𝚛𝚒𝚙𝚝𝚒𝚘𝚗: ${command.description}
+𝚄𝚜𝚊𝚐𝚎: ${command.usage || 'Non spécifié'}
+━━━━━━━━━━━━━━`;
 
-          commands.push(`🫣⚩  ${command.name.toUpperCase().padEnd(20, ' ')} ✬\n│⇨  Description : ${command.description}`);
-
-          // Création d'un bouton Quick Reply pour chaque commande
-          return {
-            content_type: 'text',
-            title: command.name,
-            payload: `HELP_${command.name.toUpperCase()}`
-          };
-        } catch (err) {
-          console.error(`Erreur lors du chargement de la commande ${file}:`, err);
-          commands.push(`❌ Erreur lors du chargement de la commande ${file}.`);
-          return null;
+          sendMessage(senderId, { text: commandDetails }, pageAccessToken);
+        } else {
+          sendMessage(senderId, { text: `La commande "${commandName}" est introuvable.` }, pageAccessToken);
         }
-      }).filter(Boolean); // Filtre les valeurs nulles
+        return;
+      }
+
+      // Affiche la liste de toutes les commandes
+      const commands = commandFiles.map(file => {
+        const command = require(path.join(commandsDir, file));
+
+        // Vérifie que chaque commande a un nom et une description
+        if (!command.name || !command.description) {
+          return `❌ La commande dans le fichier ${file} est invalide.`;
+        }
+
+        return `│ - ${command.name} : ${command.description}`;
+      });
 
       const helpMessage = `
-╭──────✯──────╮
-│🇲🇬 Commandes Disponibles 📜 
-├───────♨──────
-${commands.join('\n─────★─────\n')}
-│ 📌 Nombre total de commandes : ${commandFiles.length} │
-│ 💡 Utilisez le nom de la commande pour plus de détails ! │
-╰──────✨──────╯`;
+━━━━━━━━━━━━━━
+𝙰𝚟𝚊𝚒𝚕𝚊𝚋𝚕𝚎 𝙲𝚘𝚖𝚖𝚊𝚗𝚍𝚎𝚜:
+╭─╼━━━━━━━━╾─╮
+${commands.join('\n')}
+╰─━━━━━━━━━╾─╯
+Utilisez "help [nom de la commande]" pour voir les détails d'une commande spécifique.
+━━━━━━━━━━━━━━`;
 
-      sendMessage(senderId, { 
-        text: helpMessage, 
-        quick_replies: quickReplies 
-      }, pageAccessToken);
+      sendMessage(senderId, { text: helpMessage }, pageAccessToken);
       
     } catch (error) {
       console.error('Erreur lors de l\'exécution de la commande help:', error);
