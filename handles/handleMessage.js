@@ -97,7 +97,7 @@ async function handleImage(senderId, imageUrl, pageAccessToken, sendMessage) {
     const imageAnalysis = await analyzeImageWithGemini(imageUrl);
 
     if (imageAnalysis) {
-      await sendMessage(senderId, { text: 'Que voulez-vous que je fasse avec cette image ?' }, pageAccessToken);
+      await sendMessage(senderId, { text: '' }, pageAccessToken);
       const userState = userStates.get(senderId);
 
       if (userState && userState.lockedCommand) {
