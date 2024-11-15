@@ -35,8 +35,14 @@ async function handleMessage(event, pageAccessToken) {
     if (userStates.has(senderId) && userStates.get(senderId).awaitingImagePrompt) {
       // Utiliser le prompt de l'utilisateur pour analyser l'image
       const imageUrl = userStates.get(senderId).imageUrl;
-      userStates.delete(senderId); // Réinitialiser l'état après traitement
+      userStates.get(senderId).lockedImage = true; // Verrouiller l'image pour les questions suivantes
+      userStates.get(senderId).prompt = messageText; // Stocker le prompt initial
       await analyzeImageWithPrompt(senderId, imageUrl, messageText, pageAccessToken);
+    } else if (userStates.has(senderId) && userStates.get(senderId).lockedImage) {
+      // Poser une question supplémentaire sur l'image verrouillée
+      const imageUrl = userStates.get(senderId).imageUrl;
+      const prompt = messageText;
+      await analyzeImageWithPrompt(senderId, imageUrl, prompt, pageAccessToken);
     } else {
       // Autres traitements de texte
       await handleText(senderId, messageText, pageAccessToken, sendMessage);
