@@ -21,69 +21,90 @@ for (const file of commandFiles) {
 // Fonction principale pour gérer les messages entrants
 async function handleMessage(event, pageAccessToken) {
   const senderId = event.sender.id;
-  
-  // Vérifier si l'utilisateur est en mode verrouillé avec la commande AI
-  const lockedCommand = userStates.get(senderId)?.lockedCommand;
+
+  // Vérifier si l'utilisateur est abonné
+  const isSubscribed = checkSubscription(senderId);
 
   if (event.message.attachments && event.message.attachments[0].type === 'image') {
+    // Gérer les images même si une commande est verrouillée
     const imageUrl = event.message.attachments[0].payload.url;
-    await handleImage(senderId, imageUrl, pageAccessToken, sendMessage, lockedCommand);
+    await handleImage(senderId, imageUrl, pageAccessToken, sendMessage);
   } else if (event.message.text) {
     const messageText = event.message.text.trim().toLowerCase();
 
-    if (messageText === 'ai') {
-      // Activer le mode verrouillé pour la commande AI
-      userStates.set(senderId, { lockedCommand: 'ai' });
-      await sendMessage(senderId, { text: "🔒 La commande 'ai' est maintenant verrouillée. Toutes vos questions seront traitées par cette commande. Tapez 'stop' pour quitter." }, pageAccessToken);
+    // Vérification pour les commandes spéciales de déverrouillage
+    if (messageText === 'help') {
+      const helpCommand = commands.get('help');
+      if (helpCommand) {
+        userStates.delete(senderId); // Déverrouiller toute commande active
+        return await helpCommand.execute(senderId, [], pageAccessToken, sendMessage);
+      }
     } else if (messageText === 'stop') {
-      // Désactiver le mode verrouillé
-      userStates.delete(senderId);
-      await sendMessage(senderId, { text: "🔓 Mode verrouillé désactivé. Vous pouvez maintenant poser vos questions librement." }, pageAccessToken);
-    } else if (lockedCommand === 'ai') {
-      // Si le mode verrouillé est actif avec la commande AI, traiter toutes les requêtes avec l'IA
-      await handleAiLocked(senderId, messageText, pageAccessToken);
+      userStates.delete(senderId); // Quitter le mode verrouillé
+      return await sendMessage(senderId, { text: "Vous avez quitté le mode commande verrouillée." }, pageAccessToken);
+    }
+
+    const userState = userStates.get(senderId);
+
+    if (userState && userState.lockedCommand) {
+      // Si une commande est verrouillée, exécutez-la sans vérifier le nom de la commande
+      const lockedCommand = commands.get(userState.lockedCommand);
+      if (lockedCommand) {
+        return await lockedCommand.execute(senderId, [messageText], pageAccessToken, sendMessage);
+      }
     } else {
-      // Gestion standard pour les utilisateurs non verrouillés ou pour les commandes standard
-      await handleText(senderId, messageText, pageAccessToken, sendMessage);
+      if (!isSubscribed) {
+        if (validCodes.includes(messageText)) {
+          // Si l'utilisateur envoie un code valide, activer l'abonnement
+          const expirationDate = Date.now() + subscriptionDuration;
+          userSubscriptions.set(senderId, expirationDate);
+          await sendMessage(senderId, { text: "✅ Abonnement activé avec succès !" }, pageAccessToken);
+        } else if (canAskFreeQuestion(senderId)) {
+          // Permettre jusqu'à 2 questions gratuites par jour
+          incrementFreeQuestionCount(senderId);
+          await handleText(senderId, messageText, pageAccessToken, sendMessage);
+        } else {
+          await sendMessage(senderId, { text: "🚫 Vous avez utilisé vos 2 questions gratuites pour aujourd'hui. Utilisez un code d'activation pour continuer." }, pageAccessToken);
+        }
+      } else {
+        await handleText(senderId, messageText, pageAccessToken, sendMessage);
+      }
     }
   }
 }
 
-// Fonction pour gérer les messages texte dans le mode verrouillé
-async function handleAiLocked(senderId, text, pageAccessToken) {
-  await sendMessage(senderId, { text: "⏳ multyAi est en train de te répondre..." }, pageAccessToken);
+// Fonction pour vérifier l'abonnement
+function checkSubscription(senderId) {
+  const expirationDate = userSubscriptions.get(senderId);
   
-  // Appel à GPT-4o dans le cas d'un texte, en tant que commande verrouillée
-  const gpt4oCommand = commands.get('gpt4o');
-  if (gpt4oCommand) {
-    try {
-      await gpt4oCommand.execute(senderId, [text], pageAccessToken, sendMessage);
-    } catch (error) {
-      console.error('Erreur avec GPT-4o :', error);
-      await sendMessage(senderId, { text: 'Erreur lors de l\'utilisation de GPT-4o.' }, pageAccessToken);
-    }
-  } else {
-    await sendMessage(senderId, { text: "Erreur : GPT-4o n'est pas disponible." }, pageAccessToken);
-  }
+  if (!expirationDate) return false; 
+  if (Date.now() < expirationDate) return true;
+  
+  userSubscriptions.delete(senderId);
+  return false;
 }
 
-// Fonction pour gérer les images avec prise en charge du mode verrouillé
-async function handleImage(senderId, imageUrl, pageAccessToken, sendMessage, lockedCommand) {
+// Fonction pour gérer les images avec commande verrouillée
+async function handleImage(senderId, imageUrl, pageAccessToken, sendMessage) {
   try {
-    // Demande d'analyse de l'image sans affichage de statut
+    await sendMessage(senderId, { text: '' }, pageAccessToken);
     const imageAnalysis = await analyzeImageWithGemini(imageUrl);
 
     if (imageAnalysis) {
-      await sendMessage(senderId, { text: `Analyse de l'image : "${imageAnalysis}". Que voulez-vous faire avec cette image ?` }, pageAccessToken);
+      await sendMessage(senderId, { text: 'Que voulez-vous faire avec cette image ?' }, pageAccessToken);
+      const userState = userStates.get(senderId);
 
-      // Vérifier si en mode verrouillé pour continuer la discussion dans ce mode
-      if (lockedCommand === 'ai') {
-        userStates.set(senderId, { mode: 'image_action', lockedCommand: 'ai', imageAnalysis });
-      } else {
-        userStates.set(senderId, { mode: 'image_action', imageAnalysis });
+      if (userState && userState.lockedCommand) {
+        // Passer en mode action avec commande verrouillée
+        const lockedCommand = commands.get(userState.lockedCommand);
+        if (lockedCommand) {
+          userState.imageAnalysis = imageAnalysis;
+          userStates.set(senderId, { mode: 'image_action', lockedCommand: userState.lockedCommand });
+          await lockedCommand.execute(senderId, [imageAnalysis], pageAccessToken, sendMessage);
+        }
       }
     } else {
-      await sendMessage(senderId, { text: "Je n'ai pas pu obtenir de réponse concernant cette image." }, pageAccessToken);
+      await sendMessage(senderId, { text: "Aucune réponse concernant cette image." }, pageAccessToken);
     }
   } catch (error) {
     console.error('Erreur lors de l\'analyse de l\'image :', error);
@@ -91,21 +112,55 @@ async function handleImage(senderId, imageUrl, pageAccessToken, sendMessage, loc
   }
 }
 
-// Fonction pour gérer l'action demandée sur l'analyse de l'image
-async function handleImageAction(senderId, userQuery, imageAnalysis, pageAccessToken, sendMessage) {
-  try {
-    const fullQuery = `Voici l'analyse de l'image : "${imageAnalysis}". L'utilisateur souhaite : "${userQuery}".`;
-    await handleAiLocked(senderId, fullQuery, pageAccessToken);
-  } catch (error) {
-    console.error('Erreur lors de l\'action sur l\'image :', error);
-    await sendMessage(senderId, { text: 'Erreur lors du traitement de votre demande.' }, pageAccessToken);
-  }
+// Fonction pour gérer les textes
+async function handleText(senderId, text, pageAccessToken, sendMessage) {
+  const args = text.split(' ');
+  const commandName = args.shift().toLowerCase();
+  const command = commands.get(commandName);
 
-  // Retour au mode verrouillé général
-  userStates.set(senderId, { lockedCommand: 'ai' });
+  if (command) {
+    // Envoi du message de verrouillage seul
+    await sendMessage(senderId, { text: `🔒 La commande '${commandName}' est maintenant verrouillée. Toutes vos questions seront traitées par cette commande. Tapez 'stop' pour quitter.` }, pageAccessToken);
+    
+    // Activer le verrouillage de la commande après le message
+    userStates.set(senderId, { lockedCommand: commandName });
+    return await command.execute(senderId, args, pageAccessToken, sendMessage);
+  } else {
+    const lockedCommand = userStates.get(senderId)?.lockedCommand;
+    if (lockedCommand) {
+      // Continuer avec la commande verrouillée après analyse d'image
+      const lockedCmd = commands.get(lockedCommand);
+      if (lockedCmd) {
+        await lockedCmd.execute(senderId, [text], pageAccessToken, sendMessage);
+      }
+    } else {
+      await sendMessage(senderId, { text: "Je n'ai pas pu traiter votre demande." }, pageAccessToken);
+    }
+  }
 }
 
-// Fonction d'analyse avec l'API Gemini
+// Vérification et mise à jour des questions gratuites
+function canAskFreeQuestion(senderId) {
+  const today = new Date().toDateString();
+  const userData = userFreeQuestions.get(senderId) || { count: 0, date: today };
+
+  if (userData.date !== today) {
+    userFreeQuestions.set(senderId, { count: 1, date: today });
+    return true;
+  } else if (userData.count < 2) {
+    return true;
+  }
+  return false;
+}
+
+function incrementFreeQuestionCount(senderId) {
+  const today = new Date().toDateString();
+  const userData = userFreeQuestions.get(senderId) || { count: 0, date: today };
+  userData.count += 1;
+  userFreeQuestions.set(senderId, userData);
+}
+
+// Fonction d'analyse avec Gemini
 async function analyzeImageWithGemini(imageUrl) {
   const geminiApiEndpoint = 'https://sandipbaruwal.onrender.com/gemini2';
 
