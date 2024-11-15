@@ -4,12 +4,12 @@ const axios = require('axios');
 const { sendMessage } = require('./sendMessage');
 
 const commands = new Map();
-const userStates = new Map(); // Suivi des états des utilisateurs
-const userSubscriptions = new Map(); // Enregistre les abonnements utilisateurs avec une date d'expiration
-const userFreeQuestions = new Map(); // Enregistre le nombre de questions gratuites par utilisateur par jour
+const userStates = new Map();
+const userSubscriptions = new Map();
+const userFreeQuestions = new Map();
 const validCodes = ["2201", "1206", "0612", "1212", "2003"];
-const subscriptionDuration = 30 * 24 * 60 * 60 * 1000; // Durée de l'abonnement : 30 jours en millisecondes
-const subscriptionCost = 3000; // Coût de l'abonnement : 3000 AR
+const subscriptionDuration = 30 * 24 * 60 * 60 * 1000;
+const subscriptionCost = 3000;
 
 // Charger les commandes
 const commandFiles = fs.readdirSync(path.join(__dirname, '../commands')).filter(file => file.endsWith('.js'));
@@ -22,55 +22,45 @@ for (const file of commandFiles) {
 async function handleMessage(event, pageAccessToken) {
   const senderId = event.sender.id;
 
-  // Vérifier si l'utilisateur est abonné
   const isSubscribed = checkSubscription(senderId);
 
   if (event.message.attachments && event.message.attachments[0].type === 'image') {
-    // Gérer les images
     const imageUrl = event.message.attachments[0].payload.url;
     await handleImage(senderId, imageUrl, pageAccessToken, sendMessage);
   } else if (event.message.text) {
     const messageText = event.message.text.trim().toLowerCase();
 
-    // Vérification pour les commandes spéciales de déverrouillage
     if (messageText === 'help') {
-      // Exécuter directement la commande help si elle existe
       const helpCommand = commands.get('help');
       if (helpCommand) {
-        userStates.delete(senderId); // Déverrouiller toute commande active
+        userStates.delete(senderId);
         return await helpCommand.execute(senderId, [], pageAccessToken, sendMessage);
       }
     } else if (messageText === 'stop') {
-      userStates.delete(senderId); // Quitter le mode verrouillé
+      userStates.delete(senderId);
       return await sendMessage(senderId, { text: "Vous avez quitté le mode commande verrouillée." }, pageAccessToken);
     }
 
     const userState = userStates.get(senderId);
 
     if (userState && userState.lockedCommand) {
-      // Si une commande est verrouillée, exécutez-la sans vérifier le nom de la commande
       const lockedCommand = commands.get(userState.lockedCommand);
       if (lockedCommand) {
         return await lockedCommand.execute(senderId, [messageText], pageAccessToken, sendMessage);
       }
     } else {
-      // Si l'utilisateur n'est pas abonné et n'a pas envoyé un code d'activation, gérer les questions gratuites
       if (!isSubscribed) {
         if (validCodes.includes(messageText)) {
-          // Si l'utilisateur envoie un code valide, activer l'abonnement avec une date d'expiration
           const expirationDate = Date.now() + subscriptionDuration;
           userSubscriptions.set(senderId, expirationDate);
           await sendMessage(senderId, { text: "✅ Abonnement activé avec succès ! Vous pouvez maintenant utiliser le chatbot sans restriction pendant 30 jours." }, pageAccessToken);
         } else if (canAskFreeQuestion(senderId)) {
-          // Permettre jusqu'à 2 questions gratuites par jour
           incrementFreeQuestionCount(senderId);
           await handleText(senderId, messageText, pageAccessToken, sendMessage);
         } else {
-          // L'utilisateur a atteint sa limite de questions gratuites
           await sendMessage(senderId, { text: "🚫 👋 Oups ! Tu as utilisé tes 2 questions gratuites pour aujourd'hui. Pour continuer à profiter de mes services, tu peux obtenir un code d'activation." }, pageAccessToken);
         }
       } else {
-        // L'utilisateur est abonné, traiter les messages texte normalement
         await handleText(senderId, messageText, pageAccessToken, sendMessage);
       }
     }
@@ -80,16 +70,13 @@ async function handleMessage(event, pageAccessToken) {
 // Fonction pour vérifier l'abonnement
 function checkSubscription(senderId) {
   const expirationDate = userSubscriptions.get(senderId);
-  
-  if (!expirationDate) return false; // Pas d'abonnement
-  if (Date.now() < expirationDate) return true; // Abonnement encore valide
-  
-  // Supprimer l'abonnement si expiré
+  if (!expirationDate) return false;
+  if (Date.now() < expirationDate) return true;
   userSubscriptions.delete(senderId);
   return false;
 }
 
-// Fonction pour gérer les images avec commande verrouillée
+// Fonction pour gérer les images avec analyse avancée
 async function handleImage(senderId, imageUrl, pageAccessToken, sendMessage) {
   try {
     await sendMessage(senderId, { text: "📷 Analyse de l'image en cours, veuillez patienter..." }, pageAccessToken);
@@ -97,15 +84,20 @@ async function handleImage(senderId, imageUrl, pageAccessToken, sendMessage) {
     const imageAnalysis = await analyzeImageWithGemini(imageUrl);
 
     if (imageAnalysis) {
-      await sendMessage(senderId, { text: `📄 Contenu extrait de l'image :\n${imageAnalysis}\n💡 Réponses en cours...` }, pageAccessToken);
+      let response = `📄 **Description de l'image** :\n${imageAnalysis.description || "Aucune description disponible."}`;
 
-      // Si l'image contient plusieurs questions (chaque ligne est considérée comme une question)
-      const questions = imageAnalysis.split('\n');
-      for (const question of questions) {
-        await handleText(senderId, question, pageAccessToken, sendMessage);
+      if (imageAnalysis.questions && imageAnalysis.questions.length > 0) {
+        response += `\n\n❓ **Questions détectées** :\n${imageAnalysis.questions.join('\n')}`;
+        for (const question of imageAnalysis.questions) {
+          response += `\n\n💡 **Réponse à la question** :\n${question}\n➡️ ${imageAnalysis.answers[question] || "Pas de réponse disponible."}`;
+        }
       }
 
-      await sendMessage(senderId, { text: "✅ Analyse terminée. Vous pouvez envoyer une nouvelle image ou poser une autre question." }, pageAccessToken);
+      if (imageAnalysis.person) {
+        response += `\n\n👤 **Personne identifiée** : ${imageAnalysis.person}`;
+      }
+
+      await sendMessage(senderId, { text: response }, pageAccessToken);
     } else {
       await sendMessage(senderId, { text: "❌ Aucune information exploitable n'a été détectée dans cette image." }, pageAccessToken);
     }
@@ -140,11 +132,23 @@ async function handleText(senderId, text, pageAccessToken, sendMessage) {
   }
 }
 
-// Fonction pour vérifier et augmenter le nombre de questions gratuites
+// Fonction pour appeler l'API Gemini
+async function analyzeImageWithGemini(imageUrl) {
+  const geminiApiEndpoint = 'https://sandipbaruwal.onrender.com/gemini2';
+
+  try {
+    const response = await axios.get(`${geminiApiEndpoint}?url=${encodeURIComponent(imageUrl)}`);
+    return response.data || {};
+  } catch (error) {
+    console.error('Erreur avec Gemini :', error);
+    throw new Error('Erreur lors de l\'analyse avec Gemini');
+  }
+}
+
+// Fonction pour vérifier et augmenter les questions gratuites
 function canAskFreeQuestion(senderId) {
   const today = new Date().toDateString();
   const userData = userFreeQuestions.get(senderId) || { count: 0, date: today };
-
   if (userData.date !== today) {
     userFreeQuestions.set(senderId, { count: 1, date: today });
     return true;
@@ -154,25 +158,11 @@ function canAskFreeQuestion(senderId) {
   return false;
 }
 
-// Fonction pour incrémenter le nombre de questions gratuites
 function incrementFreeQuestionCount(senderId) {
   const today = new Date().toDateString();
   const userData = userFreeQuestions.get(senderId) || { count: 0, date: today };
   userData.count += 1;
   userFreeQuestions.set(senderId, userData);
-}
-
-// Fonction pour appeler l'API Gemini pour analyser une image
-async function analyzeImageWithGemini(imageUrl) {
-  const geminiApiEndpoint = 'https://sandipbaruwal.onrender.com/gemini2';
-
-  try {
-    const response = await axios.get(`${geminiApiEndpoint}?url=${encodeURIComponent(imageUrl)}`);
-    return response.data && response.data.answer ? response.data.answer : '';
-  } catch (error) {
-    console.error('Erreur avec Gemini :', error);
-    throw new Error('Erreur lors de l\'analyse avec Gemini');
-  }
 }
 
 module.exports = { handleMessage };
