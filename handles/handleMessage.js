@@ -32,10 +32,10 @@ async function handleMessage(event, pageAccessToken) {
   } else if (event.message.text) {
     const messageText = event.message.text.trim().toLowerCase();
 
-    // Commande "stop" pour annuler tout état verrouillé
+    // Commande "stop" pour quitter le mode actuel
     if (messageText === 'stop') {
       userStates.delete(senderId);
-      await sendMessage(senderId, { text: "🔓 Toutes les commandes ou verrouillages ont été arrêtés." }, pageAccessToken);
+      await sendMessage(senderId, { text: "🔓 Vous avez quitté le mode actuel." }, pageAccessToken);
       return;
     }
 
@@ -83,7 +83,7 @@ async function handleMessage(event, pageAccessToken) {
 // Demander le prompt de l'utilisateur pour analyser l'image
 async function askForImagePrompt(senderId, imageUrl, pageAccessToken) {
   userStates.set(senderId, { awaitingImagePrompt: true, imageUrl: imageUrl });
-  await sendMessage(senderId, { text: "📷 Image reçue. Veuillez entrer le prompt pour analyser l'image ou tapez 'stop' pour quitter le mode d'analyse d'image." }, pageAccessToken);
+  await sendMessage(senderId, { text: "📷 Image reçue. Veuillez entrer un prompt pour analyser l'image ou tapez 'stop' pour quitter le mode d'analyse d'image." }, pageAccessToken);
 }
 
 // Fonction pour analyser l'image avec le prompt fourni par l'utilisateur
@@ -99,8 +99,8 @@ async function analyzeImageWithPrompt(senderId, imageUrl, prompt, pageAccessToke
       await sendMessage(senderId, { text: "❌ Aucune information exploitable n'a été détectée dans cette image." }, pageAccessToken);
     }
 
-    // Rester en mode d'analyse d'image tant que l'utilisateur n'a pas tapé "stop"
-    await sendMessage(senderId, { text: "Vous pouvez poser une autre question sur cette image ou tapez 'stop' pour quitter le mode d'analyse d'image." }, pageAccessToken);
+    // Rester en mode d'analyse d'image tant que l'utilisateur ne tape pas "stop"
+    userStates.set(senderId, { awaitingImagePrompt: true, imageUrl: imageUrl });
   } catch (error) {
     console.error('Erreur lors de l\'analyse de l\'image :', error);
     await sendMessage(senderId, { text: "⚠️ Une erreur est survenue lors de l'analyse de l'image." }, pageAccessToken);
