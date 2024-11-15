@@ -48,7 +48,7 @@ async function handleMessage(event, pageAccessToken) {
       return;
     }
 
-    // Traiter comme d'habitude les autres commandes et messages
+    // Vérifier si le message correspond à une commande existante
     const args = messageText.split(' ');
     const commandName = args[0];
     const command = commands.get(commandName);
