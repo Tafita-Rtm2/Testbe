@@ -30,27 +30,32 @@ module.exports = {
             return `❌ La commande dans le fichier ${file} est invalide.`;
           }
 
-          return `
-🫣⚩  ${command.name.toUpperCase().padEnd(20, ' ')} ✬
-│⇨  Description : ${command.description}
-`;
+          return { title: command.name.toUpperCase(), payload: `HELP_${command.name.toUpperCase()}` };
         } catch (err) {
           console.error(`Erreur lors du chargement de la commande ${file}:`, err);
-          return `❌ Erreur lors du chargement de la commande ${file}.`;
+          return null;
         }
-      });
+      }).filter(command => command !== null);
 
-      const totalCommands = commandFiles.length;
+      const quickReplies = commands.slice(0, 13).map(command => ({
+        content_type: 'text',
+        title: command.title,
+        payload: command.payload
+      }));
+
       const helpMessage = `
 ╭──────✯──────╮
 │🇲🇬 Commandes Disponibles 📜 
 ├───────♨──────
-${commands.join('─────★─────\n')}
-│ 📌 Nombre total de commandes : ${totalCommands}  │
-│ 💡 Utilisez le nom de la commande pour plus de détails ! │
+Sélectionnez une commande ci-dessous pour obtenir des détails.
+│ 📌 Nombre total de commandes : ${commands.length}  │
+│ 💡 Utilisez les boutons pour plus de détails ! │
 ╰──────✨──────╯`;
 
-      sendMessage(senderId, { text: helpMessage }, pageAccessToken);
+      sendMessage(senderId, {
+        text: helpMessage,
+        quick_replies: quickReplies
+      }, pageAccessToken);
     } catch (error) {
       console.error('Erreur lors de l\'exécution de la commande help:', error);
       sendMessage(senderId, { text: 'Une erreur est survenue lors de l\'affichage des commandes.' }, pageAccessToken);
