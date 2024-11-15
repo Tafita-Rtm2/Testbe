@@ -87,29 +87,64 @@ async function analyzeImageWithGemini(imageUrl, prompt) {
   }
 }
 
-// Vérifier l'abonnement de l'utilisateur
+// Fonction pour vérifier l'abonnement de l'utilisateur
 function checkSubscription(senderId) {
-  const subscription = userSubscriptions.get(senderId);
-  if (subscription && subscription > Date.now()) {
-    return true;
-  } else {
-    userSubscriptions.delete(senderId); // Supprimer l'abonnement expiré
-    return false;
-  }
+  const expirationDate = userSubscriptions.get(senderId);
+  
+  if (!expirationDate) return false; // Pas d'abonnement
+  if (Date.now() < expirationDate) return true; // Abonnement encore valide
+  
+  // Supprimer l'abonnement si expiré
+  userSubscriptions.delete(senderId);
+  return false;
 }
 
 // Traiter les messages textuels
 async function handleText(senderId, messageText, pageAccessToken, sendMessage) {
-  // Traitement des commandes ou messages spécifiques ici
-  if (messageText === "code") {
-    await sendMessage(senderId, { text: "Entrez le code d'abonnement." }, pageAccessToken);
-  } else if (validCodes.includes(messageText)) {
-    const expiryDate = Date.now() + subscriptionDuration;
-    userSubscriptions.set(senderId, expiryDate);
-    await sendMessage(senderId, { text: "Votre abonnement est maintenant actif pour 30 jours. 🎉" }, pageAccessToken);
+  const args = messageText.split(' ');
+  const commandName = args.shift().toLowerCase();
+  const command = commands.get(commandName);
+
+  if (command) {
+    await sendMessage(senderId, { text: `🔒 La commande '${commandName}' est maintenant verrouillée. Toutes vos questions seront traitées par cette commande. Tapez 'stop' pour quitter.` }, pageAccessToken);
+    
+    userStates.set(senderId, { lockedCommand: commandName });
+    return await command.execute(senderId, args, pageAccessToken, sendMessage);
   } else {
-    await sendMessage(senderId, { text: "Commande non reconnue ou abonnement requis." }, pageAccessToken);
+    const gpt4oCommand = commands.get('gpt4o');
+    if (gpt4oCommand) {
+      try {
+        await gpt4oCommand.execute(senderId, [messageText], pageAccessToken, sendMessage);
+      } catch (error) {
+        console.error('Erreur avec GPT-4o :', error);
+        await sendMessage(senderId, { text: 'Erreur lors de l\'utilisation de GPT-4o.' }, pageAccessToken);
+      }
+    } else {
+      await sendMessage(senderId, { text: "Je n'ai pas pu traiter votre demande." }, pageAccessToken);
+    }
   }
+}
+
+// Vérifier et augmenter le nombre de questions gratuites
+function canAskFreeQuestion(senderId) {
+  const today = new Date().toDateString();
+  const userData = userFreeQuestions.get(senderId) || { count: 0, date: today };
+
+  if (userData.date !== today) {
+    userFreeQuestions.set(senderId, { count: 1, date: today });
+    return true;
+  } else if (userData.count < 2) {
+    return true;
+  }
+  return false;
+}
+
+// Incrémenter le nombre de questions gratuites
+function incrementFreeQuestionCount(senderId) {
+  const today = new Date().toDateString();
+  const userData = userFreeQuestions.get(senderId) || { count: 0, date: today };
+  userData.count += 1;
+  userFreeQuestions.set(senderId, userData);
 }
 
 module.exports = { handleMessage };
