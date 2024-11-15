@@ -32,32 +32,43 @@ async function handleMessage(event, pageAccessToken) {
   } else if (event.message.text) {
     const messageText = event.message.text.trim().toLowerCase();
 
-    // Commande "stop" pour arrêter l'analyse d'image en continu
+    // Commande "stop" pour quitter le mode d'analyse d'image
     if (messageText === 'stop') {
       userStates.delete(senderId);
-      await sendMessage(senderId, { text: "🔓 Analyse d'image terminée. Vous pouvez poser d'autres questions." }, pageAccessToken);
+      await sendMessage(senderId, { text: "🔓 Mode d'analyse d'image désactivé." }, pageAccessToken);
       return;
     }
 
     // Vérification si l'utilisateur attend une analyse d'image
     if (userStates.has(senderId) && userStates.get(senderId).awaitingImagePrompt) {
-      // L'utilisateur a répondu avec un prompt pour l'analyse d'image
       const { imageUrl } = userStates.get(senderId);
+
+      // Vérifier si le message est le nom d'une autre commande pour basculer
+      const args = messageText.split(' ');
+      const commandName = args[0];
+      const command = commands.get(commandName);
+
+      if (command) {
+        userStates.delete(senderId); // Sortir du mode d'analyse d'image
+        await sendMessage(senderId, { text: `🔓 Mode d'analyse d'image désactivé. Exécution de la commande '${commandName}'.` }, pageAccessToken);
+        return await command.execute(senderId, args.slice(1), pageAccessToken, sendMessage);
+      }
+
+      // Sinon, continuer l'analyse d'image avec le nouveau prompt
       await analyzeImageWithPrompt(senderId, imageUrl, messageText, pageAccessToken);
       return;
     }
 
-    // Si l'utilisateur envoie une commande non liée à l'analyse d'image
+    // Autres commandes disponibles en dehors du mode d'analyse d'image
     const args = messageText.split(' ');
-    const commandName = args[0].toLowerCase(); // Le premier mot est le nom potentiel de la commande
+    const commandName = args[0];
     const command = commands.get(commandName);
 
     if (command) {
-      // Exécuter la commande sans verrouiller
+      userStates.set(senderId, { lockedCommand: commandName });
       return await command.execute(senderId, args.slice(1), pageAccessToken, sendMessage);
     } else {
-      // Si aucune commande valide n'est détectée
-      await sendMessage(senderId, { text: "Je n'ai pas pu traiter votre demande. Essayez une commande valide ou tapez 'help'." }, pageAccessToken);
+      await sendMessage(senderId, { text: "Commande non reconnue. Essayez une commande valide ou tapez 'stop'." }, pageAccessToken);
     }
   }
 }
@@ -65,7 +76,7 @@ async function handleMessage(event, pageAccessToken) {
 // Demander le prompt de l'utilisateur pour analyser l'image
 async function askForImagePrompt(senderId, imageUrl, pageAccessToken) {
   userStates.set(senderId, { awaitingImagePrompt: true, imageUrl: imageUrl });
-  await sendMessage(senderId, { text: "Veuillez entrer le prompt que vous souhaitez utiliser pour analyser l'image." }, pageAccessToken);
+  await sendMessage(senderId, { text: "Veuillez entrer le prompt que vous souhaitez utiliser pour analyser l'image ou tapez 'stop' pour quitter le mode d'analyse d'image." }, pageAccessToken);
 }
 
 // Fonction pour analyser l'image avec le prompt fourni par l'utilisateur
@@ -81,8 +92,8 @@ async function analyzeImageWithPrompt(senderId, imageUrl, prompt, pageAccessToke
       await sendMessage(senderId, { text: "❌ Aucune information exploitable n'a été détectée dans cette image." }, pageAccessToken);
     }
 
-    // Inviter l'utilisateur à poser d'autres questions sans verrouiller
-    await sendMessage(senderId, { text: "Voulez-vous poser une autre question sur cette image ? Sinon, tapez 'stop' pour terminer l'analyse." }, pageAccessToken);
+    // Inviter l'utilisateur à poser d'autres questions sur la même image ou quitter
+    await sendMessage(senderId, { text: "Vous pouvez poser une autre question sur cette image ou tapez 'stop' pour quitter le mode d'analyse d'image." }, pageAccessToken);
   } catch (error) {
     console.error('Erreur lors de l\'analyse de l\'image :', error);
     await sendMessage(senderId, { text: "⚠️ Une erreur est survenue lors de l'analyse de l'image." }, pageAccessToken);
