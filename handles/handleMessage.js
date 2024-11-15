@@ -23,10 +23,10 @@ async function handleMessage(event, pageAccessToken) {
   const senderId = event.sender.id;
   const messageText = event.message?.text?.trim().toLowerCase();
 
-  // Si l'utilisateur envoie "help", afficher les boutons de commande et réinitialiser l'état
+  // Si l'utilisateur envoie "help", afficher les boutons de commande et passer en mode sélection
   if (messageText === 'help') {
     userStates.set(senderId, { mode: 'command_selection' }); // Passer en mode sélection de commande
-    return showCommands(senderId, pageAccessToken);
+    return await showCommands(senderId, pageAccessToken);
   }
 
   // Vérifier si l'utilisateur est en mode sélection de commande
@@ -34,14 +34,14 @@ async function handleMessage(event, pageAccessToken) {
   if (userState && userState.mode === 'command_selection') {
     // Exécuter la commande associée au bouton cliqué
     if (commands.has(messageText)) {
-      await executeCommand(senderId, messageText, pageAccessToken);
+      return await executeCommand(senderId, messageText, pageAccessToken);
     } else {
-      await sendMessage(senderId, { text: "Commande non reconnue. Tapez 'help' pour voir les commandes disponibles." }, pageAccessToken);
+      // Message d'erreur si la commande n'est pas valide
+      return await sendMessage(senderId, { text: "Commande non reconnue. Tapez 'help' pour voir les commandes disponibles." }, pageAccessToken);
     }
-    return;
   }
 
-  // Si l'utilisateur est abonné ou utilise une question gratuite
+  // Vérifier si l'utilisateur est abonné ou utilise une question gratuite
   const isSubscribed = checkSubscription(senderId);
   if (isSubscribed || canAskFreeQuestion(senderId)) {
     incrementFreeQuestionCount(senderId);
@@ -54,7 +54,7 @@ async function handleMessage(event, pageAccessToken) {
 // Fonction pour afficher les commandes disponibles sous forme de boutons
 async function showCommands(senderId, pageAccessToken) {
   const buttons = Array.from(commands.keys()).map(command => ({
-    type: 'postback',
+    content_type: 'text',
     title: command,
     payload: command
   }));
@@ -65,7 +65,7 @@ async function showCommands(senderId, pageAccessToken) {
   }, pageAccessToken);
 }
 
-// Fonction pour exécuter une commande sans texte explicite
+// Fonction pour exécuter une commande lorsque l'utilisateur clique sur un bouton
 async function executeCommand(senderId, commandName, pageAccessToken) {
   const command = commands.get(commandName);
   if (command) {
@@ -109,6 +109,9 @@ function incrementFreeQuestionCount(senderId) {
   userFreeQuestions.set(senderId, userData);
 }
 
-// Gestion des images et autres fonctions (comme `handleImage` et `analyzeImageWithGemini`) restent inchangées
+// Fonction pour gérer les messages texte
+async function handleText(senderId, text, pageAccessToken, sendMessage) {
+  // Votre logique ici pour gérer les messages texte de l'utilisateur
+}
 
 module.exports = { handleMessage };
