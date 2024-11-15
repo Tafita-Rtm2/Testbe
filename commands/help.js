@@ -33,9 +33,9 @@ module.exports = {
           const command = require(path.join(commandsDir, commandFile));
           const commandDetails = `
 ━━━━━━━━━━━━━━
-𝙲𝚘𝚖𝚖𝚊𝚗𝚍 𝙽𝚊𝚖𝚎: ${command.name}
-𝙳𝚎𝚜𝚌𝚛𝚒𝚙𝚝𝚒𝚘𝚗: ${command.description}
-𝚄𝚜𝚊𝚐𝚎: ${command.usage || 'Non spécifié'}
+Command Name: ${command.name}
+Description: ${command.description || 'Non spécifié'}
+Usage: ${command.usage || 'Non spécifié'}
 ━━━━━━━━━━━━━━`;
 
           sendMessage(senderId, { text: commandDetails }, pageAccessToken);
@@ -45,28 +45,34 @@ module.exports = {
         return;
       }
 
-      // Affiche la liste de toutes les commandes
-      const commands = commandFiles.map(file => {
+      // Liste tous les noms de commandes uniquement
+      const commandsList = commandFiles.map(file => {
         const command = require(path.join(commandsDir, file));
-
-        // Vérifie que chaque commande a un nom et une description
-        if (!command.name || !command.description) {
-          return `❌ La commande dans le fichier ${file} est invalide.`;
-        }
-
-        return `│ - ${command.name} : ${command.description}`;
-      });
+        return `- ${command.name}`;
+      }).join('\n');
 
       const helpMessage = `
-━━━━━━━━━━━━━━
-𝙰𝚟𝚊𝚒𝚕𝚊𝚋𝚕𝚎 𝙲𝚘𝚖𝚖𝚊𝚗𝚍𝚎𝚜:
-╭─╼━━━━━━━━╾─╮
-${commands.join('\n')}
-╰─━━━━━━━━━╾─╯
-Utilisez "help [nom de la commande]" pour voir les détails d'une commande spécifique.
-━━━━━━━━━━━━━━`;
+Available Commands:
+╭───────────────────╮
+${commandsList}
+╰───────────────────╯
+Chat -help [name]
+to see command details.`;
 
-      sendMessage(senderId, { text: helpMessage }, pageAccessToken);
+      // Crée les Quick Replies pour chaque commande
+      const quickReplies = commandFiles.map(file => {
+        const command = require(path.join(commandsDir, file));
+        return {
+          content_type: 'text',
+          title: command.name,
+          payload: `HELP_${command.name.toUpperCase()}`
+        };
+      });
+
+      sendMessage(senderId, { 
+        text: helpMessage, 
+        quick_replies: quickReplies 
+      }, pageAccessToken);
       
     } catch (error) {
       console.error('Erreur lors de l\'exécution de la commande help:', error);
