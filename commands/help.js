@@ -49,11 +49,11 @@ module.exports = {
       }).filter(Boolean); // Filtre les valeurs nulles
 
       const helpMessage = `
-╔═════════════╗
+╔══════════════╗
 ║ 📜 Commandes Disponibles ║
-╟─────────────╢
+╟──────────────╢
 ╟${commands.join('\n╟─────────────\n')}
-╚═════════════╝
+╚══════════════╝
 💡 Nombre total de commandes : ${commandFiles.length}`;
 
       sendMessage(senderId, { 
