@@ -12,7 +12,7 @@ module.exports = {
     const prompt = args.join(' ');
 
     if (!prompt) {
-      return sendMessage(senderId, { text: "Veuillez entrer une question valide." }, pageAccessToken);
+      return sendMessage(senderId, { text: "Vous êtes sur la commande GPT-4.0 ✔, l'intelligence artificielle de ChatGPT, capable d'effectuer des recherches sur le web et de répondre à vos demandes. Veuillez poser toutes vos questions." }, pageAccessToken);
     }
 
     // Envoyer un message indiquant que GPT-4o est en train de répondre
