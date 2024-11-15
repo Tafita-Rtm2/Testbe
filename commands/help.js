@@ -33,7 +33,7 @@ module.exports = {
           }
 
           // Formatage des commandes pour l'affichage sans description
-          commands.push(` ${command.name.toUpperCase()}`);
+          commands.push(`╟ ${command.name.toUpperCase()}`);
 
           // Création d'un bouton Quick Reply pour chaque commande
           return {
