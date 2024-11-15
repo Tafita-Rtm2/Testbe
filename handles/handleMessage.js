@@ -32,10 +32,10 @@ async function handleMessage(event, pageAccessToken) {
   } else if (event.message.text) {
     const messageText = event.message.text.trim().toLowerCase();
 
-    // Commande "stop" pour annuler tout état verrouillé
+    // Commande "stop" pour arrêter l'analyse d'image en continu
     if (messageText === 'stop') {
       userStates.delete(senderId);
-      await sendMessage(senderId, { text: "🔓 Toutes les commandes ou verrouillages ont été arrêtés." }, pageAccessToken);
+      await sendMessage(senderId, { text: "🔓 Analyse d'image terminée. Vous pouvez poser d'autres questions." }, pageAccessToken);
       return;
     }
 
@@ -43,41 +43,20 @@ async function handleMessage(event, pageAccessToken) {
     if (userStates.has(senderId) && userStates.get(senderId).awaitingImagePrompt) {
       // L'utilisateur a répondu avec un prompt pour l'analyse d'image
       const { imageUrl } = userStates.get(senderId);
-      userStates.set(senderId, { lockedCommand: 'imageAnalysis' }); // Verrouiller sur l'analyse d'image
       await analyzeImageWithPrompt(senderId, imageUrl, messageText, pageAccessToken);
       return;
     }
 
-    // Vérification si le message correspond au nom d'une commande pour déverrouiller et basculer
+    // Si l'utilisateur envoie une commande non liée à l'analyse d'image
     const args = messageText.split(' ');
     const commandName = args[0].toLowerCase(); // Le premier mot est le nom potentiel de la commande
     const command = commands.get(commandName);
 
     if (command) {
-      // Si l'utilisateur était verrouillé sur une autre commande, on déverrouille
-      if (userStates.has(senderId) && userStates.get(senderId).lockedCommand) {
-        const previousCommand = userStates.get(senderId).lockedCommand;
-        if (previousCommand !== commandName) {
-          await sendMessage(senderId, { text: `🔓 Vous n'êtes plus verrouillé sur '${previousCommand}'. Basculé vers '${commandName}'.` }, pageAccessToken);
-        }
-      } else {
-        await sendMessage(senderId, { text: `🔒 La commande '${commandName}' est maintenant verrouillée. Toutes vos questions seront traitées par cette commande. Tapez 'stop' pour quitter.` }, pageAccessToken);
-      }
-
-      // Verrouiller sur la nouvelle commande
-      userStates.set(senderId, { lockedCommand: commandName });
+      // Exécuter la commande sans verrouiller
       return await command.execute(senderId, args.slice(1), pageAccessToken, sendMessage);
-    }
-
-    // Si l'utilisateur est déjà verrouillé sur une commande
-    if (userStates.has(senderId) && userStates.get(senderId).lockedCommand) {
-      const lockedCommand = userStates.get(senderId).lockedCommand;
-      const lockedCommandInstance = commands.get(lockedCommand);
-      if (lockedCommandInstance) {
-        return await lockedCommandInstance.execute(senderId, args, pageAccessToken, sendMessage);
-      }
     } else {
-      // Sinon, traiter comme texte générique ou commande non reconnue
+      // Si aucune commande valide n'est détectée
       await sendMessage(senderId, { text: "Je n'ai pas pu traiter votre demande. Essayez une commande valide ou tapez 'help'." }, pageAccessToken);
     }
   }
@@ -101,6 +80,9 @@ async function analyzeImageWithPrompt(senderId, imageUrl, prompt, pageAccessToke
     } else {
       await sendMessage(senderId, { text: "❌ Aucune information exploitable n'a été détectée dans cette image." }, pageAccessToken);
     }
+
+    // Inviter l'utilisateur à poser d'autres questions sans verrouiller
+    await sendMessage(senderId, { text: "Voulez-vous poser une autre question sur cette image ? Sinon, tapez 'stop' pour terminer l'analyse." }, pageAccessToken);
   } catch (error) {
     console.error('Erreur lors de l\'analyse de l\'image :', error);
     await sendMessage(senderId, { text: "⚠️ Une erreur est survenue lors de l'analyse de l'image." }, pageAccessToken);
