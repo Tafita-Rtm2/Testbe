@@ -31,7 +31,7 @@ async function handleMessage(event, pageAccessToken) {
     const args = messageText.split(' ');
     const commandName = args.shift().toLowerCase();
 
-    // Vérifier si l'utilisateur est dans un mode verrouillé
+    // Vérifier si l'utilisateur est dans un mode verrouillé sur une commande
     if (userStates.has(senderId) && userStates.get(senderId).lockedCommand) {
       const lockedCommand = userStates.get(senderId).lockedCommand;
 
@@ -40,15 +40,20 @@ async function handleMessage(event, pageAccessToken) {
         userStates.delete(senderId); // Sortir du mode verrouillé
         await sendMessage(senderId, { text: "🚫 Vous avez quitté le mode verrouillé." }, pageAccessToken);
         return;
-      } else {
-        // Rediriger toutes les entrées vers la commande verrouillée
-        const command = commands.get(lockedCommand);
-        if (command) {
-          await command.execute(senderId, [messageText], pageAccessToken, sendMessage);
-        } else {
-          await sendMessage(senderId, { text: `❌ La commande '${lockedCommand}' n'existe plus.` }, pageAccessToken);
-        }
+      } else if (messageText === 'help') {
+        const currentLockedCommand = userStates.get(senderId).lockedCommand;
+        await sendMessage(senderId, { text: `ℹ️ Vous êtes actuellement verrouillé sur la commande '${currentLockedCommand}'. Tapez 'stop' pour quitter ce mode.` }, pageAccessToken);
         return;
+      } else {
+        // Changer de commande verrouillée si une autre commande est envoyée
+        if (commands.has(commandName)) {
+          userStates.set(senderId, { lockedCommand: commandName }); // Mettre à jour la commande verrouillée
+          await sendMessage(senderId, { text: `🔒 Vous êtes maintenant verrouillé sur la commande '${commandName}'. Tapez 'stop' pour quitter.` }, pageAccessToken);
+          return await commands.get(commandName).execute(senderId, args, pageAccessToken, sendMessage);
+        } else {
+          await sendMessage(senderId, { text: `❌ La commande '${commandName}' n'existe pas.` }, pageAccessToken);
+          return;
+        }
       }
     }
 
@@ -97,6 +102,53 @@ async function handleMessage(event, pageAccessToken) {
   }
 }
 
-// Les autres fonctions restent inchangées (voir la version précédente).
+// Demander le prompt de l'utilisateur pour analyser l'image
+async function askForImagePrompt(senderId, imageUrl, pageAccessToken) {
+  userStates.set(senderId, { awaitingImagePrompt: true, imageUrl: imageUrl });
+  await sendMessage(senderId, { text: "Veuillez entrer le prompt que vous souhaitez utiliser pour analyser l'image." }, pageAccessToken);
+}
+
+// Fonction pour analyser l'image avec le prompt fourni par l'utilisateur
+async function analyzeImageWithPrompt(senderId, imageUrl, prompt, pageAccessToken) {
+  try {
+    await sendMessage(senderId, { text: "📷 Analyse de l'image en cours, veuillez patienter..." }, pageAccessToken);
+
+    const imageAnalysis = await analyzeImageWithGemini(imageUrl, prompt);
+
+    if (imageAnalysis) {
+      await sendMessage(senderId, { text: `📄 Résultat de l'analyse :\n${imageAnalysis}` }, pageAccessToken);
+    } else {
+      await sendMessage(senderId, { text: "❌ Aucune information exploitable n'a été détectée dans cette image." }, pageAccessToken);
+    }
+  } catch (error) {
+    console.error('Erreur lors de l\'analyse de l\'image :', error);
+    await sendMessage(senderId, { text: "⚠️ Une erreur est survenue lors de l'analyse de l'image." }, pageAccessToken);
+  }
+}
+
+// Fonction pour appeler l'API Gemini pour analyser une image avec un prompt
+async function analyzeImageWithGemini(imageUrl, prompt) {
+  const geminiApiEndpoint = 'https://sandipbaruwal.onrender.com/gemini2';
+
+  try {
+    const response = await axios.get(`${geminiApiEndpoint}?url=${encodeURIComponent(imageUrl)}&prompt=${encodeURIComponent(prompt)}`);
+    return response.data && response.data.answer ? response.data.answer : '';
+  } catch (error) {
+    console.error('Erreur avec Gemini :', error);
+    throw new Error('Erreur lors de l\'analyse avec Gemini');
+  }
+}
+
+// Fonction pour vérifier l'abonnement de l'utilisateur
+function checkSubscription(senderId) {
+  const expirationDate = userSubscriptions.get(senderId);
+  
+  if (!expirationDate) return false; // Pas d'abonnement
+  if (Date.now() < expirationDate) return true; // Abonnement encore valide
+  
+  // Supprimer l'abonnement si expiré
+  userSubscriptions.delete(senderId);
+  return false;
+}
 
 module.exports = { handleMessage };
