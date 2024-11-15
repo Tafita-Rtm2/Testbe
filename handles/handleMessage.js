@@ -39,34 +39,18 @@ async function handleMessage(event, pageAccessToken) {
       return;
     }
 
-    // Commande "help" pour fournir de l'aide
-    if (messageText === 'help') {
-      await sendMessage(senderId, { text: "ℹ️ Vous pouvez poser une question ou utiliser une commande disponible. Tapez 'stop' pour quitter tout mode verrouillé." }, pageAccessToken);
-      return;
-    }
-
-    // Gestion des états liés à l'analyse d'image
-    if (userStates.has(senderId) && userStates.get(senderId).awaitingImagePrompt) {
-      const imageUrl = userStates.get(senderId).imageUrl;
-      userStates.get(senderId).lockedImage = true;
-      userStates.get(senderId).prompt = messageText;
-      await analyzeImageWithPrompt(senderId, imageUrl, messageText, pageAccessToken);
-    } else if (userStates.has(senderId) && userStates.get(senderId).lockedImage) {
-      const imageUrl = userStates.get(senderId).imageUrl;
-      await analyzeImageWithPrompt(senderId, imageUrl, messageText, pageAccessToken);
-    } else {
-      // Gestion des commandes verrouillées ou nouvelles
-      if (userStates.has(senderId) && userStates.get(senderId).lockedCommand) {
-        const lockedCommand = userStates.get(senderId).lockedCommand;
-        const command = commands.get(lockedCommand);
-        if (command) {
-          return await command.execute(senderId, [messageText], pageAccessToken, sendMessage);
-        }
-      } else {
-        // Traiter comme une nouvelle commande ou texte
-        await handleText(senderId, messageText, pageAccessToken);
+    // Gestion des commandes verrouillées ou nouvelles
+    if (userStates.has(senderId) && userStates.get(senderId).lockedCommand) {
+      const lockedCommand = userStates.get(senderId).lockedCommand;
+      const command = commands.get(lockedCommand);
+      if (command) {
+        await command.execute(senderId, [messageText], pageAccessToken, sendMessage);
+        return;
       }
     }
+
+    // Traiter les commandes ou les messages textuels
+    await handleText(senderId, messageText, pageAccessToken);
   }
 }
 
@@ -126,12 +110,35 @@ async function handleText(senderId, messageText, pageAccessToken) {
   const command = commands.get(commandName);
 
   if (command) {
+    // Verrouillage de la commande
     await sendMessage(senderId, { text: `🔒 La commande '${commandName}' est maintenant verrouillée. Toutes vos questions seront traitées par cette commande. Tapez 'stop' pour quitter.` }, pageAccessToken);
     userStates.set(senderId, { lockedCommand: commandName });
     return await command.execute(senderId, args, pageAccessToken, sendMessage);
   } else {
-    await sendMessage(senderId, { text: "Je n'ai pas pu traiter votre demande. Essayez une commande valide ou tapez 'help'." }, pageAccessToken);
+    await sendMessage(senderId, { text: "Je n'ai pas pu traiter votre demande. Essayez une commande valide ou tapez 'stop'." }, pageAccessToken);
   }
+}
+
+// Vérifier et augmenter le nombre de questions gratuites
+function canAskFreeQuestion(senderId) {
+  const today = new Date().toDateString();
+  const userData = userFreeQuestions.get(senderId) || { count: 0, date: today };
+
+  if (userData.date !== today) {
+    userFreeQuestions.set(senderId, { count: 1, date: today });
+    return true;
+  } else if (userData.count < 2) {
+    return true;
+  }
+  return false;
+}
+
+// Incrémenter le nombre de questions gratuites
+function incrementFreeQuestionCount(senderId) {
+  const today = new Date().toDateString();
+  const userData = userFreeQuestions.get(senderId) || { count: 0, date: today };
+  userData.count += 1;
+  userFreeQuestions.set(senderId, userData);
 }
 
 module.exports = { handleMessage };
