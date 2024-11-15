@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 module.exports = {
-  name: 'help',
+  name: 'menu',
   description: 'Afficher les commandes disponibles',
   author: 'System',
   execute(senderId, args, pageAccessToken, sendMessage) {
