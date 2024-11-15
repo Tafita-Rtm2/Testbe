@@ -21,34 +21,46 @@ module.exports = {
         return sendMessage(senderId, { text: 'Aucune commande disponible.' }, pageAccessToken);
       }
 
-      const commands = commandFiles.map(file => {
-        const command = require(path.join(commandsDir, file));
-        return `| - ${command.name}`;
-      });
-
+      const commands = [];
       const quickReplies = commandFiles.map(file => {
-        const command = require(path.join(commandsDir, file));
-        return {
-          content_type: 'text',
-          title: command.name,
-          payload: `HELP_${command.name.toUpperCase()}`
-        };
-      });
+        try {
+          const command = require(path.join(commandsDir, file));
+
+          // Vérifie que la commande a bien un nom et une description
+          if (!command.name || !command.description) {
+            commands.push(`❌ La commande dans le fichier ${file} est invalide.`);
+            return null;
+          }
+
+          // Formatage des commandes pour l'affichage
+          commands.push(`⚡ **${command.name.toUpperCase()}**\n   ✦ Description : ${command.description}`);
+
+          // Création d'un bouton Quick Reply pour chaque commande
+          return {
+            content_type: 'text',
+            title: command.name,
+            payload: `HELP_${command.name.toUpperCase()}`
+          };
+        } catch (err) {
+          console.error(`Erreur lors du chargement de la commande ${file}:`, err);
+          commands.push(`❌ Erreur lors du chargement de la commande ${file}.`);
+          return null;
+        }
+      }).filter(Boolean); // Filtre les valeurs nulles
 
       const helpMessage = `
-Available Commands:
-╭─────────────────╮
-${commands.join('\n')}
-╰─────────────────╯
-Chat -help [name]
-to see command details.
-Admin: rtm tafitaniaina`;
+╔═════════════════════╗
+║ 📜 **Commandes Disponibles** ║
+╟─────────────────────╢
+${commands.join('\n╟─────────────────────\n')}
+╚═════════════════════╝
+💡 **Nombre total de commandes : ${commandFiles.length}**`;
 
       sendMessage(senderId, { 
         text: helpMessage, 
         quick_replies: quickReplies 
       }, pageAccessToken);
-
+      
     } catch (error) {
       console.error('Erreur lors de l\'exécution de la commande help:', error);
       sendMessage(senderId, { text: 'Une erreur est survenue lors de l\'affichage des commandes.' }, pageAccessToken);
