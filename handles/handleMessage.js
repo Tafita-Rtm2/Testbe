@@ -26,7 +26,7 @@ async function handleMessage(event, pageAccessToken) {
   const isSubscribed = checkSubscription(senderId);
 
   if (event.message.attachments && event.message.attachments[0].type === 'image') {
-    // Gérer les images
+    // Gérer l'image : Demander un prompt pour analyser l'image
     const imageUrl = event.message.attachments[0].payload.url;
     await askForImagePrompt(senderId, imageUrl, pageAccessToken);
   } else if (event.message.text) {
@@ -37,6 +37,29 @@ async function handleMessage(event, pageAccessToken) {
       userStates.delete(senderId);
       await sendMessage(senderId, { text: "🔓 Toutes les commandes ou verrouillages ont été arrêtés." }, pageAccessToken);
       return;
+    }
+
+    // Si l'utilisateur a déjà envoyé une image et a demandé une analyse, gérer la discussion sur cette image
+    if (userStates.has(senderId) && userStates.get(senderId).awaitingImagePrompt) {
+      const imageState = userStates.get(senderId);
+      
+      // Si l'utilisateur a déjà obtenu des résultats d'analyse, répondre aux questions supplémentaires
+      if (imageState.analysisResults) {
+        // Ici, nous répondons à l'utilisateur en fonction du texte envoyé après l'analyse
+        const question = messageText; // L'utilisateur pose une question basée sur l'analyse
+        const analysisResults = imageState.analysisResults;
+        
+        // Pour la discussion, vous pouvez inclure des règles de base (par exemple, recherche dans les résultats d'analyse)
+        const response = analyzeImageDiscussion(analysisResults, question);
+        
+        // Envoyer la réponse à l'utilisateur
+        await sendMessage(senderId, { text: response }, pageAccessToken);
+        return;
+      } else {
+        // Si l'analyse n'est pas encore faite, on demande d'abord un prompt
+        await sendMessage(senderId, { text: "Veuillez entrer le prompt pour analyser l'image." }, pageAccessToken);
+        return;
+      }
     }
 
     // Vérification si le message correspond au nom d'une commande pour déverrouiller et basculer
@@ -88,7 +111,10 @@ async function analyzeImageWithPrompt(senderId, imageUrl, prompt, pageAccessToke
     const imageAnalysis = await analyzeImageWithGemini(imageUrl, prompt);
 
     if (imageAnalysis) {
+      // Sauvegarder les résultats de l'analyse dans l'état de l'utilisateur pour discussion ultérieure
+      userStates.set(senderId, { awaitingImagePrompt: false, analysisResults: imageAnalysis });
       await sendMessage(senderId, { text: `📄 Résultat de l'analyse :\n${imageAnalysis}` }, pageAccessToken);
+      await sendMessage(senderId, { text: "Posez des questions supplémentaires pour en savoir plus sur l'image." }, pageAccessToken);
     } else {
       await sendMessage(senderId, { text: "❌ Aucune information exploitable n'a été détectée dans cette image." }, pageAccessToken);
     }
@@ -108,6 +134,17 @@ async function analyzeImageWithGemini(imageUrl, prompt) {
   } catch (error) {
     console.error('Erreur avec Gemini :', error);
     throw new Error('Erreur lors de l\'analyse avec Gemini');
+  }
+}
+
+// Fonction pour répondre aux questions basées sur l'analyse de l'image
+function analyzeImageDiscussion(analysisResults, question) {
+  // Répondre à l'utilisateur en fonction des résultats de l'analyse
+  // Par exemple, vous pouvez rechercher dans l'analyse et répondre dynamiquement
+  if (analysisResults.includes(question)) {
+    return `Voici la réponse basée sur l'analyse : ${analysisResults}`;
+  } else {
+    return "Je n'ai pas trouvé d'information précise pour cette question, mais je peux vous aider à explorer l'analyse en détail!";
   }
 }
 
