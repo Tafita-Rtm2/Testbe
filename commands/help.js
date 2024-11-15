@@ -21,35 +21,46 @@ module.exports = {
         return sendMessage(senderId, { text: 'Aucune commande disponible.' }, pageAccessToken);
       }
 
-      // Génère les quick replies pour chaque commande
+      const commands = [];
       const quickReplies = commandFiles.map(file => {
         try {
           const command = require(path.join(commandsDir, file));
 
           // Vérifie que la commande a bien un nom et une description
           if (!command.name || !command.description) {
-            return null; // Ignore si la commande est invalide
+            commands.push(`❌ La commande dans le fichier ${file} est invalide.`);
+            return null;
           }
 
+          commands.push(`🫣⚩  ${command.name.toUpperCase().padEnd(20, ' ')} ✬\n│⇨  Description : ${command.description}`);
+
+          // Création d'un bouton Quick Reply pour chaque commande
           return {
-            content_type: "text",
+            content_type: 'text',
             title: command.name,
             payload: `HELP_${command.name.toUpperCase()}`
           };
         } catch (err) {
           console.error(`Erreur lors du chargement de la commande ${file}:`, err);
+          commands.push(`❌ Erreur lors du chargement de la commande ${file}.`);
           return null;
         }
       }).filter(Boolean); // Filtre les valeurs nulles
 
-      const totalCommands = quickReplies.length;
-      const helpMessage = `🇲🇬 Commandes Disponibles 📜\n\n📌 Nombre total de commandes : ${totalCommands}\n💡 Utilisez les boutons ci-dessous pour sélectionner une commande.`;
+      const helpMessage = `
+╭──────✯──────╮
+│🇲🇬 Commandes Disponibles 📜 
+├───────♨──────
+${commands.join('\n─────★─────\n')}
+│ 📌 Nombre total de commandes : ${commandFiles.length} │
+│ 💡 Utilisez le nom de la commande pour plus de détails ! │
+╰──────✨──────╯`;
 
-      // Envoie le message avec des quick_replies pour chaque commande
       sendMessage(senderId, { 
-        text: helpMessage,
+        text: helpMessage, 
         quick_replies: quickReplies 
       }, pageAccessToken);
+      
     } catch (error) {
       console.error('Erreur lors de l\'exécution de la commande help:', error);
       sendMessage(senderId, { text: 'Une erreur est survenue lors de l\'affichage des commandes.' }, pageAccessToken);
