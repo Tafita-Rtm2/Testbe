@@ -22,8 +22,8 @@ async function handleMessage(event, pageAccessToken) {
   const senderId = event.sender.id;
   const messageText = event.message.text.trim().toLowerCase();
 
-  // Gérer la commande spéciale 'exit' pour quitter le mode verrouillé
-  if (messageText === 'exit') {
+  // Gérer la commande spéciale 'stop' pour quitter le mode verrouillé
+  if (messageText === 'stop') {
     userStates.delete(senderId); // Supprimer l'état verrouillé
     return await sendMessage(senderId, { text: "Vous avez quitté le mode commande verrouillée." }, pageAccessToken);
   }
@@ -47,21 +47,23 @@ async function handleMessage(event, pageAccessToken) {
   if (command) {
     // Activer le mode verrouillé pour cette commande
     userStates.set(senderId, { lockedCommand: commandName });
-    await sendMessage(senderId, { text: `Commande '${commandName}' activée en mode verrouillé. Tapez 'exit' pour quitter.` }, pageAccessToken);
+    await sendMessage(senderId, { text: `Commande '${commandName}' activée en mode verrouillé. Tapez 'stop' pour quitter.` }, pageAccessToken);
     return await command.execute(senderId, args, pageAccessToken, sendMessage);
   }
 
-  // Si aucun état verrouillé et pas de commande valide, envoyer un message d'erreur
+  // Si aucune commande trouvée, envoyer un message d'erreur
   await sendMessage(senderId, { text: "Commande non reconnue. Tapez 'help' pour voir la liste des commandes disponibles." }, pageAccessToken);
 }
 
 // Fonction pour envoyer la liste des commandes disponibles
 async function sendHelpMessage(senderId, pageAccessToken) {
-  const helpText = "Voici les commandes disponibles:\n";
-  for (const [name] of commands) {
-    helpText += `- ${name}\n`;
-  }
-  helpText += "\nTapez une commande pour l'activer. Tapez 'exit' pour quitter une commande verrouillée.";
+  let helpText = "🇫🇷🇲🇬 **Commandes Disponibles** 📜\n\n";
+  commands.forEach((command, name) => {
+    helpText += `🌟 **${name.toUpperCase()}**\n   ⤷ **Description**: ${command.description || "Aucune description"}\n`;
+    helpText += "───────────────────────\n";
+  });
+  helpText += "\n💡 Tapez une commande pour l'activer. Utilisez 'stop' pour quitter une commande verrouillée.";
+
   await sendMessage(senderId, { text: helpText }, pageAccessToken);
 }
 
