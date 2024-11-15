@@ -26,7 +26,6 @@ async function handleMessage(event, pageAccessToken) {
   const isSubscribed = checkSubscription(senderId);
 
   if (event.message.attachments && event.message.attachments[0].type === 'image') {
-    // Gérer les images
     const imageUrl = event.message.attachments[0].payload.url;
     await askForImagePrompt(senderId, imageUrl, pageAccessToken);
   } else if (event.message.text) {
@@ -36,81 +35,92 @@ async function handleMessage(event, pageAccessToken) {
     if (validCodes.includes(messageText)) {
       const expirationDate = Date.now() + subscriptionDuration;
       userSubscriptions.set(senderId, expirationDate);
+
+      // Envoyer le message d'état avant d'exécuter d'autres actions
       await sendMessage(senderId, {
         text: `✅ Code validé ! Votre abonnement de 30 jours est maintenant actif jusqu'au ${new Date(expirationDate).toLocaleDateString()} !`
       }, pageAccessToken);
 
-      // Exécution automatique de la commande "help" après validation
+      // Exécution automatique de la commande "help"
       const helpCommand = commands.get('help');
       if (helpCommand) {
-        await helpCommand.execute(senderId, [], pageAccessToken, sendMessage);
+        return await helpCommand.execute(senderId, [], pageAccessToken, sendMessage);
       } else {
-        await sendMessage(senderId, { text: "❌ La commande 'help' n'est pas disponible." }, pageAccessToken);
+        return await sendMessage(senderId, { text: "❌ La commande 'help' n'est pas disponible." }, pageAccessToken);
       }
-      return;
     }
 
     // Commande "stop" pour quitter le mode actuel
     if (messageText.toLowerCase() === 'stop') {
       userStates.delete(senderId);
-      await sendMessage(senderId, { text: "🔓 Vous avez quitté le mode actuel." }, pageAccessToken);
-      return;
+      return await sendMessage(senderId, { text: "🔓 Vous avez quitté le mode actuel." }, pageAccessToken);
     }
 
     // Vérifier si l'utilisateur est en mode d'analyse d'image
     if (userStates.has(senderId) && userStates.get(senderId).awaitingImagePrompt) {
       const { imageUrl } = userStates.get(senderId);
-      await analyzeImageWithPrompt(senderId, imageUrl, messageText, pageAccessToken);
-      return;
+
+      // Envoyer un message avant l'analyse
+      await sendMessage(senderId, { text: "🔍 Analyse en cours, merci de patienter..." }, pageAccessToken);
+
+      return await analyzeImageWithPrompt(senderId, imageUrl, messageText, pageAccessToken);
     }
 
-    // Vérification si le message correspond au nom d'une commande pour déverrouiller et basculer
+    // Gestion des commandes
     const args = messageText.split(' ');
     const commandName = args[0].toLowerCase();
     const command = commands.get(commandName);
 
     if (command) {
-      // Si l'utilisateur était verrouillé sur une autre commande, on déverrouille
-      if (userStates.has(senderId) && userStates.get(senderId).lockedCommand) {
-        const previousCommand = userStates.get(senderId).lockedCommand;
-        if (previousCommand !== commandName) {
-          await sendMessage(senderId, { text: `🔓 Vous n'êtes plus verrouillé sur ☑'${previousCommand}'. Basculé vers ✔'${commandName}'.` }, pageAccessToken);
-        }
-      } else {
-        await sendMessage(senderId, { text: `🔒 La commande '${commandName}' est maintenant verrouillée✔. Toutes vos questions seront traitées par cette commande🤖. Tapez 'stop' pour quitter🚫.` }, pageAccessToken);
-      }
+      // Envoyer un message d'état avant d'exécuter une commande
+      await sendMessage(senderId, { text: `🔒 Exécution de la commande '${commandName}'...` }, pageAccessToken);
 
-      // Envoi du message avant l'exécution de la commande
-      if (userStates.has(senderId) && userStates.get(senderId).lockedCommand) {
-        const lockedCommand = userStates.get(senderId).lockedCommand;
-        await sendMessage(senderId, { 
-          text: `🔓 Vous n'êtes plus verrouillé sur ☑'${lockedCommand}'. Basculé vers ✔'${commandName}'.` 
-        }, pageAccessToken);
-      } else {
-        await sendMessage(senderId, { 
-          text: `🔒 La commande '${commandName}' est maintenant verrouillée✔. Toutes vos questions seront traitées par cette commande🤖. Tapez 'stop' pour quitter🚫.` 
-        }, pageAccessToken);
-      }
-
-      // Verrouiller sur la nouvelle commande
-      userStates.set(senderId, { lockedCommand: commandName });
-
-      // Exécuter la commande
       return await command.execute(senderId, args.slice(1), pageAccessToken, sendMessage);
     }
 
-    // Si l'utilisateur est déjà verrouillé sur une commande
+    // Gestion des commandes verrouillées
     if (userStates.has(senderId) && userStates.get(senderId).lockedCommand) {
       const lockedCommand = userStates.get(senderId).lockedCommand;
       const lockedCommandInstance = commands.get(lockedCommand);
+
       if (lockedCommandInstance) {
         return await lockedCommandInstance.execute(senderId, args, pageAccessToken, sendMessage);
       }
     } else {
-      // Sinon, traiter comme texte générique ou commande non reconnue
-      await sendMessage(senderId, { text: "Je n'ai pas pu traiter votre demande. Essayez une commande valide ou tapez 'help'." }, pageAccessToken);
+      // Envoyer un message d'état si aucune commande n'est reconnue
+      return await sendMessage(senderId, { text: "Je n'ai pas compris votre demande. Essayez une commande valide ou tapez 'help'." }, pageAccessToken);
     }
   }
+}
+
+// Fonction pour analyser une image avec un prompt
+async function analyzeImageWithPrompt(senderId, imageUrl, prompt, pageAccessToken) {
+  try {
+    await sendMessage(senderId, { text: "🔍 Traitement de votre demande... ⏳" }, pageAccessToken);
+
+    const analysisResult = await analyzeImageWithGemini(imageUrl, prompt);
+
+    if (analysisResult) {
+      await sendMessage(senderId, { text: `📄 Résultat de l'analyse :\n${analysisResult}` }, pageAccessToken);
+    } else {
+      await sendMessage(senderId, { text: "❌ Aucune donnée exploitable trouvée dans l'image." }, pageAccessToken);
+    }
+
+    userStates.set(senderId, { awaitingImagePrompt: true, imageUrl });
+  } catch (error) {
+    console.error('Erreur lors de l\'analyse de l\'image :', error);
+    await sendMessage(senderId, { text: "⚠️ Une erreur est survenue lors de l'analyse." }, pageAccessToken);
+  }
+}
+
+// Fonction pour vérifier l'abonnement d'un utilisateur
+function checkSubscription(senderId) {
+  const expirationDate = userSubscriptions.get(senderId);
+  if (!expirationDate) return false;
+  if (Date.now() < expirationDate) return true;
+
+  userSubscriptions.delete(senderId);
+  return false;
 }
 
 module.exports = { handleMessage };
