@@ -31,46 +31,20 @@ async function handleMessage(event, pageAccessToken) {
     await askForImagePrompt(senderId, imageUrl, pageAccessToken);
   } else if (event.message.text) {
     const messageText = event.message.text.trim().toLowerCase();
-    const args = messageText.split(' ');
-    const commandName = args.shift().toLowerCase();
-    const command = commands.get(commandName);
 
-    // Prioriser les commandes textuelles spécifiques
-    if (command) {
-      userStates.delete(senderId); // Quitter tout état existant (comme lockedImage)
-      await command.execute(senderId, args, pageAccessToken, sendMessage);
-      return;
-    }
-
-    if (userStates.has(senderId)) {
-      const userState = userStates.get(senderId);
-
-      if (userState.awaitingImagePrompt || userState.lockedImage) {
-        // Commandes spéciales pour le mode image
-        if (messageText === 'stop') {
-          userStates.delete(senderId); // Quitter le mode image
-          await sendMessage(senderId, { text: "🚫 Vous avez quitté le mode image." }, pageAccessToken);
-          return;
-        } else if (messageText === 'help') {
-          await sendMessage(senderId, { text: "ℹ️ Voici de l'aide concernant l'utilisation du mode image :\n- Entrez une description pour analyser l'image.\n- Tapez 'stop' pour quitter le mode image." }, pageAccessToken);
-          return;
-        }
-      }
-
-      if (userState.awaitingImagePrompt) {
-        // Utiliser le prompt de l'utilisateur pour analyser l'image
-        const imageUrl = userState.imageUrl;
-        userState.lockedImage = true; // Verrouiller l'image pour les questions suivantes
-        userState.prompt = messageText; // Stocker le prompt initial
-        await analyzeImageWithPrompt(senderId, imageUrl, messageText, pageAccessToken);
-      } else if (userState.lockedImage) {
-        // Poser une question supplémentaire sur l'image verrouillée
-        const imageUrl = userState.imageUrl;
-        const prompt = messageText;
-        await analyzeImageWithPrompt(senderId, imageUrl, prompt, pageAccessToken);
-      }
+    if (userStates.has(senderId) && userStates.get(senderId).awaitingImagePrompt) {
+      // Utiliser le prompt de l'utilisateur pour analyser l'image
+      const imageUrl = userStates.get(senderId).imageUrl;
+      userStates.get(senderId).lockedImage = true; // Verrouiller l'image pour les questions suivantes
+      userStates.get(senderId).prompt = messageText; // Stocker le prompt initial
+      await analyzeImageWithPrompt(senderId, imageUrl, messageText, pageAccessToken);
+    } else if (userStates.has(senderId) && userStates.get(senderId).lockedImage) {
+      // Poser une question supplémentaire sur l'image verrouillée
+      const imageUrl = userStates.get(senderId).imageUrl;
+      const prompt = messageText;
+      await analyzeImageWithPrompt(senderId, imageUrl, prompt, pageAccessToken);
     } else {
-      // Si aucune commande n'est reconnue et pas en mode image, traiter comme texte général
+      // Autres traitements de texte
       await handleText(senderId, messageText, pageAccessToken, sendMessage);
     }
   }
@@ -79,7 +53,7 @@ async function handleMessage(event, pageAccessToken) {
 // Demander le prompt de l'utilisateur pour analyser l'image
 async function askForImagePrompt(senderId, imageUrl, pageAccessToken) {
   userStates.set(senderId, { awaitingImagePrompt: true, imageUrl: imageUrl });
-  await sendMessage(senderId, { text: "Veuillez entrer le prompt que vous souhaitez utiliser pour analyser l'image.\nTapez 'stop' pour quitter ou 'help' pour obtenir de l'aide." }, pageAccessToken);
+  await sendMessage(senderId, { text: "Veuillez entrer le prompt que vous souhaitez utiliser pour analyser l'image." }, pageAccessToken);
 }
 
 // Fonction pour analyser l'image avec le prompt fourni par l'utilisateur
