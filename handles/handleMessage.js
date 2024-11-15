@@ -34,38 +34,26 @@ async function handleMessage(event, pageAccessToken) {
 
     // Commande "stop" pour quitter le mode d'analyse d'image
     if (messageText === 'stop') {
-      userStates.delete(senderId);
-      await sendMessage(senderId, { text: "🔓 Mode d'analyse d'image désactivé." }, pageAccessToken);
-      return;
+      if (userStates.has(senderId) && userStates.get(senderId).awaitingImagePrompt) {
+        userStates.delete(senderId); // Sortir du mode d'analyse d'image
+        await sendMessage(senderId, { text: "🔓 Mode d'analyse d'image désactivé." }, pageAccessToken);
+        return;
+      }
     }
 
     // Vérification si l'utilisateur attend une analyse d'image
     if (userStates.has(senderId) && userStates.get(senderId).awaitingImagePrompt) {
       const { imageUrl } = userStates.get(senderId);
-
-      // Vérifier si le message est le nom d'une autre commande pour basculer
-      const args = messageText.split(' ');
-      const commandName = args[0];
-      const command = commands.get(commandName);
-
-      if (command) {
-        userStates.delete(senderId); // Sortir du mode d'analyse d'image
-        await sendMessage(senderId, { text: `🔓 Mode d'analyse d'image désactivé. Exécution de la commande '${commandName}'.` }, pageAccessToken);
-        return await command.execute(senderId, args.slice(1), pageAccessToken, sendMessage);
-      }
-
-      // Sinon, continuer l'analyse d'image avec le nouveau prompt
       await analyzeImageWithPrompt(senderId, imageUrl, messageText, pageAccessToken);
       return;
     }
 
-    // Autres commandes disponibles en dehors du mode d'analyse d'image
+    // Traiter comme d'habitude les autres commandes et messages
     const args = messageText.split(' ');
     const commandName = args[0];
     const command = commands.get(commandName);
 
     if (command) {
-      userStates.set(senderId, { lockedCommand: commandName });
       return await command.execute(senderId, args.slice(1), pageAccessToken, sendMessage);
     } else {
       await sendMessage(senderId, { text: "Commande non reconnue. Essayez une commande valide ou tapez 'stop'." }, pageAccessToken);
