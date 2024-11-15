@@ -32,20 +32,44 @@ async function handleMessage(event, pageAccessToken) {
   } else if (event.message.text) {
     const messageText = event.message.text.trim().toLowerCase();
 
-    // Commande "stop" pour annuler l'analyse de l'image
+    // Commande "stop" pour annuler tout état verrouillé
     if (messageText === 'stop') {
       userStates.delete(senderId);
-      await sendMessage(senderId, { text: "🔓 Vous avez arrêté l'analyse de l'image." }, pageAccessToken);
+      await sendMessage(senderId, { text: "🔓 Toutes les commandes ou verrouillages ont été arrêtés." }, pageAccessToken);
       return;
     }
 
-    // Vérification si l'utilisateur est en train de discuter avec une image
-    if (userStates.has(senderId) && userStates.get(senderId).awaitingImagePrompt) {
-      const imageUrl = userStates.get(senderId).imageUrl;
-      await analyzeImageWithPrompt(senderId, imageUrl, messageText, pageAccessToken);
+    // Vérification si le message correspond au nom d'une commande pour déverrouiller et basculer
+    const args = messageText.split(' ');
+    const commandName = args[0].toLowerCase(); // Le premier mot est le nom potentiel de la commande
+    const command = commands.get(commandName);
+
+    if (command) {
+      // Si l'utilisateur était verrouillé sur une autre commande, on déverrouille
+      if (userStates.has(senderId) && userStates.get(senderId).lockedCommand) {
+        const previousCommand = userStates.get(senderId).lockedCommand;
+        if (previousCommand !== commandName) {
+          await sendMessage(senderId, { text: `🔓 Vous n'êtes plus verrouillé sur '${previousCommand}'. Basculé vers '${commandName}'.` }, pageAccessToken);
+        }
+      } else {
+        await sendMessage(senderId, { text: `🔒 La commande '${commandName}' est maintenant verrouillée. Toutes vos questions seront traitées par cette commande. Tapez 'stop' pour quitter.` }, pageAccessToken);
+      }
+
+      // Verrouiller sur la nouvelle commande
+      userStates.set(senderId, { lockedCommand: commandName });
+      return await command.execute(senderId, args.slice(1), pageAccessToken, sendMessage);
+    }
+
+    // Si l'utilisateur est déjà verrouillé sur une commande
+    if (userStates.has(senderId) && userStates.get(senderId).lockedCommand) {
+      const lockedCommand = userStates.get(senderId).lockedCommand;
+      const lockedCommandInstance = commands.get(lockedCommand);
+      if (lockedCommandInstance) {
+        return await lockedCommandInstance.execute(senderId, args, pageAccessToken, sendMessage);
+      }
     } else {
-      // Traiter les autres commandes ou messages texte
-      await handleText(senderId, messageText, pageAccessToken, sendMessage);
+      // Sinon, traiter comme texte générique ou commande non reconnue
+      await sendMessage(senderId, { text: "Je n'ai pas pu traiter votre demande. Essayez une commande valide ou tapez 'help'." }, pageAccessToken);
     }
   }
 }
@@ -97,32 +121,6 @@ function checkSubscription(senderId) {
   // Supprimer l'abonnement si expiré
   userSubscriptions.delete(senderId);
   return false;
-}
-
-// Traiter les messages textuels et autres commandes
-async function handleText(senderId, messageText, pageAccessToken, sendMessage) {
-  const args = messageText.split(' ');
-  const commandName = args.shift().toLowerCase();
-  const command = commands.get(commandName);
-
-  if (command) {
-    await sendMessage(senderId, { text: `🔒 La commande '${commandName}' est maintenant verrouillée. Toutes vos questions seront traitées par cette commande. Tapez 'stop' pour quitter.` }, pageAccessToken);
-    
-    userStates.set(senderId, { lockedCommand: commandName });
-    return await command.execute(senderId, args, pageAccessToken, sendMessage);
-  } else {
-    const gpt4oCommand = commands.get('gpt4o');
-    if (gpt4oCommand) {
-      try {
-        await gpt4oCommand.execute(senderId, [messageText], pageAccessToken, sendMessage);
-      } catch (error) {
-        console.error('Erreur avec GPT-4o :', error);
-        await sendMessage(senderId, { text: 'Erreur lors de l\'utilisation de GPT-4o.' }, pageAccessToken);
-      }
-    } else {
-      await sendMessage(senderId, { text: "Je n'ai pas pu traiter votre demande." }, pageAccessToken);
-    }
-  }
 }
 
 module.exports = { handleMessage };
