@@ -9,7 +9,6 @@ const userSubscriptions = new Map(); // Enregistre les abonnements utilisateurs 
 const userFreeQuestions = new Map(); // Enregistre le nombre de questions gratuites par utilisateur par jour
 const validCodes = ["2201", "1206", "0612", "1212", "2003"];
 const subscriptionDuration = 30 * 24 * 60 * 60 * 1000; // Durée de l'abonnement : 30 jours en millisecondes
-const subscriptionCost = 3000; // Coût de l'abonnement : 3000 AR
 
 // Charger les commandes
 const commandFiles = fs.readdirSync(path.join(__dirname, '../commands')).filter(file => file.endsWith('.js'));
@@ -21,103 +20,49 @@ for (const file of commandFiles) {
 // Fonction principale pour gérer les messages entrants
 async function handleMessage(event, pageAccessToken) {
   const senderId = event.sender.id;
+  const messageText = event.message.text.trim().toLowerCase();
 
-  // Vérifier si l'utilisateur est abonné
-  const isSubscribed = checkSubscription(senderId);
-
-  if (event.message.attachments && event.message.attachments[0].type === 'image') {
-    // Gérer les images sans vérifier l'abonnement
-    const imageUrl = event.message.attachments[0].payload.url;
-    await handleImage(senderId, imageUrl, pageAccessToken, sendMessage);
-  } else if (event.message.text) {
-    const messageText = event.message.text.trim().toLowerCase();
-    
-    // Gestion du "command lock"
-    const userState = userStates.get(senderId);
-    if (userState && userState.lockedCommand && messageText !== "exit") {
-      // Si une commande est verrouillée, exécutez-la avec le message actuel
-      return await executeLockedCommand(senderId, messageText, pageAccessToken);
-    }
-
-    // Si l'utilisateur envoie "exit", libérez le "command lock"
-    if (messageText === "exit") {
-      userStates.set(senderId, { lockedCommand: null });
-      return await sendMessage(senderId, { text: "Vous avez quitté le mode commande verrouillée." }, pageAccessToken);
-    }
-
-    // Si l'utilisateur n'est pas abonné et n'a pas envoyé un code d'activation, gérer les questions gratuites
-    if (!isSubscribed) {
-      if (validCodes.includes(messageText)) {
-        const expirationDate = Date.now() + subscriptionDuration;
-        userSubscriptions.set(senderId, expirationDate);
-        await sendMessage(senderId, { text: "✅ Abonnement activé avec succès ! Vous pouvez maintenant utiliser le chatbot sans restriction pendant 30 jours." }, pageAccessToken);
-      } else if (canAskFreeQuestion(senderId)) {
-        incrementFreeQuestionCount(senderId);
-        await handleText(senderId, messageText, pageAccessToken, sendMessage);
-      } else {
-        await sendMessage(senderId, { text: "🚫 👋 Oups ! Tu as utilisé tes 2 questions gratuites pour aujourd'hui. Pour continuer à profiter de mes services, tu peux obtenir un code d'activation en t'abonnant à RTM Tafitaniaina ➡️ https://www.facebook.com/manarintso.niaina Ou via WhatsApp 📱 au +261385858330 .Une fois que tu as ton code d'activation, envoie-le moi 📧 et je t'activerai !." }, pageAccessToken);
-      }
-    } else {
-      await handleText(senderId, messageText, pageAccessToken, sendMessage);
-    }
+  // Gérer la commande spéciale 'exit' pour quitter le mode verrouillé
+  if (messageText === 'exit') {
+    userStates.delete(senderId); // Supprimer l'état verrouillé
+    return await sendMessage(senderId, { text: "Vous avez quitté le mode commande verrouillée." }, pageAccessToken);
   }
-}
 
-// Fonction pour vérifier l'abonnement
-function checkSubscription(senderId) {
-  const expirationDate = userSubscriptions.get(senderId);
-  if (!expirationDate) return false;
-  if (Date.now() < expirationDate) return true;
-  userSubscriptions.delete(senderId);
-  return false;
-}
-
-// Fonction pour gérer les images
-async function handleImage(senderId, imageUrl, pageAccessToken, sendMessage) {
-  try {
-    await sendMessage(senderId, { text: '' }, pageAccessToken);
-    const imageAnalysis = await analyzeImageWithGemini(imageUrl);
-    if (imageAnalysis) {
-      await sendMessage(senderId, { text: 'Que voulez-vous que je fasse avec cette image ?' }, pageAccessToken);
-      userStates.set(senderId, { mode: 'image_action', imageAnalysis });
-    } else {
-      await sendMessage(senderId, { text: "Je n'ai pas pu obtenir de réponse concernant cette image." }, pageAccessToken);
-    }
-  } catch (error) {
-    console.error('Erreur lors de l\'analyse de l\'image :', error);
-    await sendMessage(senderId, { text: 'Erreur lors de l\'analyse de l\'image.' }, pageAccessToken);
+  // Gérer la commande 'help'
+  if (messageText === 'help') {
+    return await sendHelpMessage(senderId, pageAccessToken);
   }
-}
 
-// Fonction pour gérer les textes
-async function handleText(senderId, text, pageAccessToken, sendMessage) {
-  const args = text.split(' ');
+  // Vérifier si l'utilisateur est en mode de commande verrouillée
+  const userState = userStates.get(senderId);
+  if (userState && userState.lockedCommand) {
+    return await executeLockedCommand(senderId, messageText, pageAccessToken);
+  }
+
+  // Vérifier si l'utilisateur envoie une commande initiale pour activer le mode verrouillé
+  const args = messageText.split(' ');
   const commandName = args.shift().toLowerCase();
   const command = commands.get(commandName);
 
   if (command) {
+    // Activer le mode verrouillé pour cette commande
     userStates.set(senderId, { lockedCommand: commandName });
-    await sendMessage(senderId, { text: `Commande '${commandName}' activée. Envoyez vos messages directement pour interagir avec cette commande. Tapez 'exit' pour quitter.` }, pageAccessToken);
-    try {
-      await command.execute(senderId, args, pageAccessToken, sendMessage);
-    } catch (error) {
-      console.error(`Erreur lors de l'exécution de la commande ${commandName}:`, error);
-      await sendMessage(senderId, { text: `Erreur lors de l'exécution de la commande ${commandName}.` }, pageAccessToken);
-    }
-  } else {
-    // Si aucune commande trouvée et pas en mode image
-    const gpt4oCommand = commands.get('gpt4o');
-    if (gpt4oCommand) {
-      try {
-        await gpt4oCommand.execute(senderId, [text], pageAccessToken, sendMessage);
-      } catch (error) {
-        console.error('Erreur avec GPT-4o :', error);
-        await sendMessage(senderId, { text: 'Erreur lors de l\'utilisation de GPT-4o.' }, pageAccessToken);
-      }
-    } else {
-      await sendMessage(senderId, { text: "Je n'ai pas pu traiter votre demande." }, pageAccessToken);
-    }
+    await sendMessage(senderId, { text: `Commande '${commandName}' activée en mode verrouillé. Tapez 'exit' pour quitter.` }, pageAccessToken);
+    return await command.execute(senderId, args, pageAccessToken, sendMessage);
   }
+
+  // Si aucun état verrouillé et pas de commande valide, envoyer un message d'erreur
+  await sendMessage(senderId, { text: "Commande non reconnue. Tapez 'help' pour voir la liste des commandes disponibles." }, pageAccessToken);
+}
+
+// Fonction pour envoyer la liste des commandes disponibles
+async function sendHelpMessage(senderId, pageAccessToken) {
+  const helpText = "Voici les commandes disponibles:\n";
+  for (const [name] of commands) {
+    helpText += `- ${name}\n`;
+  }
+  helpText += "\nTapez une commande pour l'activer. Tapez 'exit' pour quitter une commande verrouillée.";
+  await sendMessage(senderId, { text: helpText }, pageAccessToken);
 }
 
 // Fonction pour exécuter la commande verrouillée
@@ -125,7 +70,7 @@ async function executeLockedCommand(senderId, messageText, pageAccessToken) {
   const userState = userStates.get(senderId);
   const lockedCommandName = userState.lockedCommand;
   const command = commands.get(lockedCommandName);
-  
+
   if (command) {
     try {
       await command.execute(senderId, [messageText], pageAccessToken, sendMessage);
@@ -138,7 +83,7 @@ async function executeLockedCommand(senderId, messageText, pageAccessToken) {
   }
 }
 
-// Autres fonctions utilitaires (pour les abonnements, questions gratuites, analyse d'images, etc.)
-// ...
+// Fonction pour gérer les abonnements et les questions gratuites (ajoutez vos autres fonctions de gestion ici)
 
+// Exporter la fonction handleMessage pour l'utiliser dans l'application
 module.exports = { handleMessage };
