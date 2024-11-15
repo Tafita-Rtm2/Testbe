@@ -89,7 +89,7 @@ async function describeImage(prompt, photoUrl) {
 // Fonction pour obtenir une réponse textuelle via l'API
 async function getTextResponse(prompt, senderId) {
   try {
-    const { data } = await axios.get(`https://gemini-ai-pearl-two.vercel.app/kshitiz?prompt=${encodeURIComponent(prompt)}&uid=${senderId}&apikey=kshitiz`);
+    const { data } = await axios.get(`https://sandipbaruwal.onrender.com/gemini2?prompt=${encodeURIComponent(prompt)}&uid=${senderId}&apikey=kshitiz`);
     return data.answer;
   } catch (error) {
     throw new Error('Erreur lors de l’appel API Gemini pour la réponse textuelle');
