@@ -22,6 +22,15 @@ function sendMessage(senderId, message, pageAccessToken) {
   // Ajoute les "Quick Replies" si elles existent dans le message
   if (message.quick_replies) {
     payload.message.quick_replies = message.quick_replies;
+  } else {
+    // Ajouter le bouton Quick Reply "Menu" si aucun Quick Reply n'est défini
+    payload.message.quick_replies = [
+      {
+        content_type: "text",
+        title: "Menu",
+        payload: "MENU_PAYLOAD"
+      }
+    ];
   }
 
   request({
