@@ -26,14 +26,14 @@ module.exports = {
         try {
           const command = require(path.join(commandsDir, file));
 
-          // Vérifie que la commande a bien un nom et une description
-          if (!command.name || !command.description) {
+          // Vérifie que la commande a bien un nom
+          if (!command.name) {
             commands.push(`❌ La commande dans le fichier ${file} est invalide.`);
             return null;
           }
 
-          // Formatage des commandes pour l'affichage
-          commands.push(`⚡ ${command.name.toUpperCase()}\n   `);
+          // Formatage des commandes pour l'affichage sans description
+          commands.push(`⚡ ${command.name.toUpperCase()}`);
 
           // Création d'un bouton Quick Reply pour chaque commande
           return {
@@ -52,9 +52,9 @@ module.exports = {
 ╔════════════════╗
 ║ 📜 Commandes Disponibles ║
 ╟────────────────╢
-${commands.join('\n╟──────────────\n')}
+${commands.join('\n╟────────────────\n')}
 ╚════════════════╝
-💡 Nombre total de commandes : ${commandFiles.length}**`;
+💡 Nombre total de commandes : ${commandFiles.length}`;
 
       sendMessage(senderId, { 
         text: helpMessage, 
