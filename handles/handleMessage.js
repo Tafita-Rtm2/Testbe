@@ -22,49 +22,56 @@ for (const file of commandFiles) {
 async function handleMessage(event, pageAccessToken) {
   const senderId = event.sender.id;
 
-  // Si un utilisateur est dans un mode verrouillé sur une commande
-  if (userStates.has(senderId) && userStates.get(senderId).lockedCommand) {
-    const lockedCommand = userStates.get(senderId).lockedCommand;
+  // Vérifier si l'utilisateur est abonné
+  const isSubscribed = checkSubscription(senderId);
+
+  if (event.message.attachments && event.message.attachments[0].type === 'image') {
+    // Gérer les images
+    const imageUrl = event.message.attachments[0].payload.url;
+    await askForImagePrompt(senderId, imageUrl, pageAccessToken);
+  } else if (event.message.text) {
     const messageText = event.message.text.trim().toLowerCase();
     const args = messageText.split(' ');
+    const commandName = args.shift().toLowerCase();
+    const command = commands.get(commandName);
 
-    // Si l'utilisateur tape 'stop', il sort du mode verrouillé
-    if (messageText === 'stop') {
-      userStates.delete(senderId); // Quitter le mode verrouillé
-      await sendMessage(senderId, { text: "🚫 Vous avez quitté le mode verrouillé." }, pageAccessToken);
-      return;
-    }
-
-    // Si l'utilisateur tape 'help', donner des infos sur le verrouillage
-    if (messageText === 'help') {
-      await sendMessage(senderId, { text: `ℹ️ Vous êtes actuellement verrouillé sur la commande '${lockedCommand}'. Tapez 'stop' pour quitter ce mode.` }, pageAccessToken);
-      return;
-    }
-
-    // Exécuter la commande verrouillée
-    const command = commands.get(lockedCommand);
+    // Prioriser les commandes textuelles spécifiques
     if (command) {
-      return await command.execute(senderId, args, pageAccessToken, sendMessage);
+      userStates.delete(senderId); // Quitter tout état existant (comme lockedImage)
+      await command.execute(senderId, args, pageAccessToken, sendMessage);
+      return;
     }
-  } else {
-    // Si l'utilisateur n'est pas dans un mode verrouillé, traiter les autres cas
-    if (event.message.attachments && event.message.attachments[0].type === 'image') {
-      // Gérer les images
-      const imageUrl = event.message.attachments[0].payload.url;
-      await askForImagePrompt(senderId, imageUrl, pageAccessToken);
-    } else if (event.message.text) {
-      const messageText = event.message.text.trim().toLowerCase();
-      const args = messageText.split(' ');
-      const commandName = args.shift().toLowerCase();
 
-      // Gérer les commandes spécifiques
-      if (commands.has(commandName)) {
-        userStates.set(senderId, { lockedCommand: commandName }); // Verrouiller sur la commande
-        await sendMessage(senderId, { text: `🔒 Vous êtes maintenant verrouillé sur la commande '${commandName}'. Tapez 'stop' pour quitter.` }, pageAccessToken);
-        return await commands.get(commandName).execute(senderId, args, pageAccessToken, sendMessage);
-      } else {
-        await sendMessage(senderId, { text: "❓ Je n'ai pas compris votre demande. Tapez 'help' pour de l'aide." }, pageAccessToken);
+    if (userStates.has(senderId)) {
+      const userState = userStates.get(senderId);
+
+      if (userState.awaitingImagePrompt || userState.lockedImage) {
+        // Commandes spéciales pour le mode image
+        if (messageText === 'stop') {
+          userStates.delete(senderId); // Quitter le mode image
+          await sendMessage(senderId, { text: "🚫 Vous avez quitté le mode image." }, pageAccessToken);
+          return;
+        } else if (messageText === 'help') {
+          await sendMessage(senderId, { text: "ℹ️ Voici de l'aide concernant l'utilisation du mode image :\n- Entrez une description pour analyser l'image.\n- Tapez 'stop' pour quitter le mode image." }, pageAccessToken);
+          return;
+        }
       }
+
+      if (userState.awaitingImagePrompt) {
+        // Utiliser le prompt de l'utilisateur pour analyser l'image
+        const imageUrl = userState.imageUrl;
+        userState.lockedImage = true; // Verrouiller l'image pour les questions suivantes
+        userState.prompt = messageText; // Stocker le prompt initial
+        await analyzeImageWithPrompt(senderId, imageUrl, messageText, pageAccessToken);
+      } else if (userState.lockedImage) {
+        // Poser une question supplémentaire sur l'image verrouillée
+        const imageUrl = userState.imageUrl;
+        const prompt = messageText;
+        await analyzeImageWithPrompt(senderId, imageUrl, prompt, pageAccessToken);
+      }
+    } else {
+      // Si aucune commande n'est reconnue et pas en mode image, traiter comme texte général
+      await handleText(senderId, messageText, pageAccessToken, sendMessage);
     }
   }
 }
@@ -72,7 +79,7 @@ async function handleMessage(event, pageAccessToken) {
 // Demander le prompt de l'utilisateur pour analyser l'image
 async function askForImagePrompt(senderId, imageUrl, pageAccessToken) {
   userStates.set(senderId, { awaitingImagePrompt: true, imageUrl: imageUrl });
-  await sendMessage(senderId, { text: "Veuillez entrer le prompt que vous souhaitez utiliser pour analyser l'image." }, pageAccessToken);
+  await sendMessage(senderId, { text: "Veuillez entrer le prompt que vous souhaitez utiliser pour analyser l'image.\nTapez 'stop' pour quitter ou 'help' pour obtenir de l'aide." }, pageAccessToken);
 }
 
 // Fonction pour analyser l'image avec le prompt fourni par l'utilisateur
@@ -116,6 +123,54 @@ function checkSubscription(senderId) {
   // Supprimer l'abonnement si expiré
   userSubscriptions.delete(senderId);
   return false;
+}
+
+// Traiter les messages textuels
+async function handleText(senderId, messageText, pageAccessToken, sendMessage) {
+  const args = messageText.split(' ');
+  const commandName = args.shift().toLowerCase();
+  const command = commands.get(commandName);
+
+  if (command) {
+    await sendMessage(senderId, { text: `🔒 La commande '${commandName}' est maintenant verrouillée. Toutes vos questions seront traitées par cette commande. Tapez 'stop' pour quitter.` }, pageAccessToken);
+    
+    userStates.set(senderId, { lockedCommand: commandName });
+    return await command.execute(senderId, args, pageAccessToken, sendMessage);
+  } else {
+    const gpt4oCommand = commands.get('gpt4o');
+    if (gpt4oCommand) {
+      try {
+        await gpt4oCommand.execute(senderId, [messageText], pageAccessToken, sendMessage);
+      } catch (error) {
+        console.error('Erreur avec GPT-4o :', error);
+        await sendMessage(senderId, { text: 'Erreur lors de l\'utilisation de GPT-4o.' }, pageAccessToken);
+      }
+    } else {
+      await sendMessage(senderId, { text: "Je n'ai pas pu traiter votre demande." }, pageAccessToken);
+    }
+  }
+}
+
+// Vérifier et augmenter le nombre de questions gratuites
+function canAskFreeQuestion(senderId) {
+  const today = new Date().toDateString();
+  const userData = userFreeQuestions.get(senderId) || { count: 0, date: today };
+
+  if (userData.date !== today) {
+    userFreeQuestions.set(senderId, { count: 1, date: today });
+    return true;
+  } else if (userData.count < 2) {
+    return true;
+  }
+  return false;
+}
+
+// Incrémenter le nombre de questions gratuites
+function incrementFreeQuestionCount(senderId) {
+  const today = new Date().toDateString();
+  const userData = userFreeQuestions.get(senderId) || { count: 0, date: today };
+  userData.count += 1;
+  userFreeQuestions.set(senderId, userData);
 }
 
 module.exports = { handleMessage };
