@@ -33,7 +33,7 @@ module.exports = {
           }
 
           // Formatage des commandes pour l'affichage
-          commands.push(`⚡ ${command.name.toUpperCase()}\n );
+          commands.push(`⚡ ${command.name.toUpperCase()}\n   `);
 
           // Création d'un bouton Quick Reply pour chaque commande
           return {
@@ -49,12 +49,12 @@ module.exports = {
       }).filter(Boolean); // Filtre les valeurs nulles
 
       const helpMessage = `
-╔══════════════╗
-║ 📜Commandes Disponibles║
-╟──────────────╢
-${commands.join('\n╟────────────\n')}
-╚══════════════╝
-💡 Nombre total de commandes : ${commandFiles.length}`;
+╔════════════════╗
+║ 📜 Commandes Disponibles ║
+╟────────────────╢
+${commands.join('\n╟──────────────\n')}
+╚════════════════╝
+💡 Nombre total de commandes : ${commandFiles.length}**`;
 
       sendMessage(senderId, { 
         text: helpMessage, 
