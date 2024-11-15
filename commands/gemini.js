@@ -34,7 +34,7 @@ module.exports = {
       }
     } catch (error) {
       console.error('Error calling Gemini API:', error);
-      await sendMessage(senderId, { text: 'Une erreur est survenue.' }, pageAccessToken);
+      await sendMessage(senderId, { text: ' Vous êtes sur la commande multy ai ✔ l intelligence artificielle deplusieur ai qui se reunie a repondre votre question et répondre à vos demandes Veuillez poser toutes vos questions.' }, pageAccessToken);
     }
   }
 };
