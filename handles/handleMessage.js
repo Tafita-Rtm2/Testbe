@@ -31,18 +31,28 @@ async function handleMessage(event, pageAccessToken) {
     await askForImagePrompt(senderId, imageUrl, pageAccessToken);
   } else if (event.message.text) {
     const messageText = event.message.text.trim().toLowerCase();
+    const args = messageText.split(' ');
+    const commandName = args.shift().toLowerCase();
+    const command = commands.get(commandName);
+
+    // Prioriser les commandes textuelles spécifiques
+    if (command) {
+      userStates.delete(senderId); // Quitter tout état existant (comme lockedImage)
+      await command.execute(senderId, args, pageAccessToken, sendMessage);
+      return;
+    }
 
     if (userStates.has(senderId)) {
       const userState = userStates.get(senderId);
 
       if (userState.awaitingImagePrompt || userState.lockedImage) {
-        // Commande pour arrêter ou obtenir de l'aide
+        // Commandes spéciales pour le mode image
         if (messageText === 'stop') {
-          userStates.delete(senderId); // Supprimer l'état de l'utilisateur
+          userStates.delete(senderId); // Quitter le mode image
           await sendMessage(senderId, { text: "🚫 Vous avez quitté le mode image." }, pageAccessToken);
           return;
         } else if (messageText === 'help') {
-          await sendMessage(senderId, { text: "ℹ️ Voici de l'aide concernant l'utilisation du mode image." }, pageAccessToken);
+          await sendMessage(senderId, { text: "ℹ️ Voici de l'aide concernant l'utilisation du mode image :\n- Entrez une description pour analyser l'image.\n- Tapez 'stop' pour quitter le mode image." }, pageAccessToken);
           return;
         }
       }
@@ -60,7 +70,7 @@ async function handleMessage(event, pageAccessToken) {
         await analyzeImageWithPrompt(senderId, imageUrl, prompt, pageAccessToken);
       }
     } else {
-      // Autres traitements de texte
+      // Si aucune commande n'est reconnue et pas en mode image, traiter comme texte général
       await handleText(senderId, messageText, pageAccessToken, sendMessage);
     }
   }
