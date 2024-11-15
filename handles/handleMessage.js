@@ -10,12 +10,18 @@ const userFreeQuestions = new Map(); // Enregistre le nombre de questions gratui
 const validCodes = ["2201", "1206", "0612", "1212", "2003"];
 const subscriptionDuration = 30 * 24 * 60 * 60 * 1000; // Durée de l'abonnement : 30 jours en millisecondes
 
-// Charger les commandes
-const commandFiles = fs.readdirSync(path.join(__dirname, '../commands')).filter(file => file.endsWith('.js'));
-for (const file of commandFiles) {
-  const command = require(`../commands/${file}`);
-  commands.set(command.name, command);
+// Fonction pour charger les commandes
+function loadCommands() {
+  commands.clear(); // Vider la liste actuelle des commandes
+  const commandFiles = fs.readdirSync(path.join(__dirname, '../commands')).filter(file => file.endsWith('.js'));
+  for (const file of commandFiles) {
+    const command = require(`../commands/${file}`);
+    commands.set(command.name, command);
+  }
 }
+
+// Charger les commandes au démarrage
+loadCommands();
 
 // Fonction principale pour gérer les messages entrants
 async function handleMessage(event, pageAccessToken) {
@@ -57,6 +63,8 @@ async function handleMessage(event, pageAccessToken) {
 
 // Fonction pour envoyer la liste des commandes disponibles
 async function sendHelpMessage(senderId, pageAccessToken) {
+  loadCommands(); // Recharge les commandes pour s'assurer qu'elles sont à jour
+
   let helpText = "🇫🇷🇲🇬 **Commandes Disponibles** 📜\n\n";
   commands.forEach((command, name) => {
     helpText += `🌟 **${name.toUpperCase()}**\n   ⤷ **Description**: ${command.description || "Aucune description"}\n`;
