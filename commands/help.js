@@ -21,40 +21,34 @@ module.exports = {
         return sendMessage(senderId, { text: 'Aucune commande disponible.' }, pageAccessToken);
       }
 
-      const commands = commandFiles.map(file => {
+      // Génère les quick replies pour chaque commande
+      const quickReplies = commandFiles.map(file => {
         try {
           const command = require(path.join(commandsDir, file));
 
           // Vérifie que la commande a bien un nom et une description
           if (!command.name || !command.description) {
-            return `❌ La commande dans le fichier ${file} est invalide.`;
+            return null; // Ignore si la commande est invalide
           }
 
-          return { title: command.name.toUpperCase(), payload: `HELP_${command.name.toUpperCase()}` };
+          return {
+            content_type: "text",
+            title: command.name,
+            payload: `HELP_${command.name.toUpperCase()}`
+          };
         } catch (err) {
           console.error(`Erreur lors du chargement de la commande ${file}:`, err);
           return null;
         }
-      }).filter(command => command !== null);
+      }).filter(Boolean); // Filtre les valeurs nulles
 
-      const quickReplies = commands.slice(0, 13).map(command => ({
-        content_type: 'text',
-        title: command.title,
-        payload: command.payload
-      }));
+      const totalCommands = quickReplies.length;
+      const helpMessage = `🇲🇬 Commandes Disponibles 📜\n\n📌 Nombre total de commandes : ${totalCommands}\n💡 Utilisez les boutons ci-dessous pour sélectionner une commande.`;
 
-      const helpMessage = `
-╭──────✯──────╮
-│🇲🇬 Commandes Disponibles 📜 
-├───────♨──────
-Sélectionnez une commande ci-dessous pour obtenir des détails.
-│ 📌 Nombre total de commandes : ${commands.length}  │
-│ 💡 Utilisez les boutons pour plus de détails ! │
-╰──────✨──────╯`;
-
-      sendMessage(senderId, {
+      // Envoie le message avec des quick_replies pour chaque commande
+      sendMessage(senderId, { 
         text: helpMessage,
-        quick_replies: quickReplies
+        quick_replies: quickReplies 
       }, pageAccessToken);
     } catch (error) {
       console.error('Erreur lors de l\'exécution de la commande help:', error);
