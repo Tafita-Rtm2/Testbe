@@ -39,7 +39,7 @@ async function handleMessage(event, pageAccessToken) {
       return;
     }
 
-    // Vérifier si l'utilisateur est en train de discuter avec une image
+    // Vérification si l'utilisateur est en train de discuter avec une image
     if (userStates.has(senderId) && userStates.get(senderId).awaitingImagePrompt) {
       const imageUrl = userStates.get(senderId).imageUrl;
       await analyzeImageWithPrompt(senderId, imageUrl, messageText, pageAccessToken);
@@ -90,10 +90,10 @@ async function analyzeImageWithGemini(imageUrl, prompt) {
 // Fonction pour vérifier l'abonnement de l'utilisateur
 function checkSubscription(senderId) {
   const expirationDate = userSubscriptions.get(senderId);
-  
+
   if (!expirationDate) return false; // Pas d'abonnement
   if (Date.now() < expirationDate) return true; // Abonnement encore valide
-  
+
   // Supprimer l'abonnement si expiré
   userSubscriptions.delete(senderId);
   return false;
