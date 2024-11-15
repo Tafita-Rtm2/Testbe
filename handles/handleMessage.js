@@ -39,18 +39,38 @@ async function handleMessage(event, pageAccessToken) {
       return;
     }
 
-    // Gestion des commandes verrouillées ou nouvelles
-    if (userStates.has(senderId) && userStates.get(senderId).lockedCommand) {
-      const lockedCommand = userStates.get(senderId).lockedCommand;
-      const command = commands.get(lockedCommand);
-      if (command) {
-        await command.execute(senderId, [messageText], pageAccessToken, sendMessage);
-        return;
+    // Vérification si le message correspond au nom d'une commande pour déverrouiller et basculer
+    const args = messageText.split(' ');
+    const commandName = args[0].toLowerCase(); // Le premier mot est le nom potentiel de la commande
+    const command = commands.get(commandName);
+
+    if (command) {
+      // Si l'utilisateur était verrouillé sur une autre commande, on déverrouille
+      if (userStates.has(senderId) && userStates.get(senderId).lockedCommand) {
+        const previousCommand = userStates.get(senderId).lockedCommand;
+        if (previousCommand !== commandName) {
+          await sendMessage(senderId, { text: `🔓 Vous n'êtes plus verrouillé sur '${previousCommand}'. Basculé vers '${commandName}'.` }, pageAccessToken);
+        }
+      } else {
+        await sendMessage(senderId, { text: `🔒 La commande '${commandName}' est maintenant verrouillée. Toutes vos questions seront traitées par cette commande. Tapez 'stop' pour quitter.` }, pageAccessToken);
       }
+
+      // Verrouiller sur la nouvelle commande
+      userStates.set(senderId, { lockedCommand: commandName });
+      return await command.execute(senderId, args.slice(1), pageAccessToken, sendMessage);
     }
 
-    // Traiter les commandes ou les messages textuels
-    await handleText(senderId, messageText, pageAccessToken);
+    // Si l'utilisateur est déjà verrouillé sur une commande
+    if (userStates.has(senderId) && userStates.get(senderId).lockedCommand) {
+      const lockedCommand = userStates.get(senderId).lockedCommand;
+      const lockedCommandInstance = commands.get(lockedCommand);
+      if (lockedCommandInstance) {
+        return await lockedCommandInstance.execute(senderId, args, pageAccessToken, sendMessage);
+      }
+    } else {
+      // Sinon, traiter comme texte générique ou commande non reconnue
+      await sendMessage(senderId, { text: "Je n'ai pas pu traiter votre demande. Essayez une commande valide ou tapez 'help'." }, pageAccessToken);
+    }
   }
 }
 
@@ -101,44 +121,6 @@ function checkSubscription(senderId) {
   // Supprimer l'abonnement si expiré
   userSubscriptions.delete(senderId);
   return false;
-}
-
-// Traiter les messages textuels
-async function handleText(senderId, messageText, pageAccessToken) {
-  const args = messageText.split(' ');
-  const commandName = args.shift().toLowerCase();
-  const command = commands.get(commandName);
-
-  if (command) {
-    // Verrouillage de la commande
-    await sendMessage(senderId, { text: `🔒 La commande '${commandName}' est maintenant verrouillée. Toutes vos questions seront traitées par cette commande. Tapez 'stop' pour quitter.` }, pageAccessToken);
-    userStates.set(senderId, { lockedCommand: commandName });
-    return await command.execute(senderId, args, pageAccessToken, sendMessage);
-  } else {
-    await sendMessage(senderId, { text: "Je n'ai pas pu traiter votre demande. Essayez une commande valide ou tapez 'stop'." }, pageAccessToken);
-  }
-}
-
-// Vérifier et augmenter le nombre de questions gratuites
-function canAskFreeQuestion(senderId) {
-  const today = new Date().toDateString();
-  const userData = userFreeQuestions.get(senderId) || { count: 0, date: today };
-
-  if (userData.date !== today) {
-    userFreeQuestions.set(senderId, { count: 1, date: today });
-    return true;
-  } else if (userData.count < 2) {
-    return true;
-  }
-  return false;
-}
-
-// Incrémenter le nombre de questions gratuites
-function incrementFreeQuestionCount(senderId) {
-  const today = new Date().toDateString();
-  const userData = userFreeQuestions.get(senderId) || { count: 0, date: today };
-  userData.count += 1;
-  userFreeQuestions.set(senderId, userData);
 }
 
 module.exports = { handleMessage };
