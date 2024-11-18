@@ -8,22 +8,6 @@ const userStates = new Map(); // Suivi des états des utilisateurs
 const userSubscriptions = new Map(); // Enregistre les abonnements utilisateurs avec une date d'expiration
 const validCodes = ["2201", "1206", "0612", "1212", "2003"]; // Codes d'abonnement valides
 const subscriptionDuration = 30 * 24 * 60 * 60 * 1000; // Durée de l'abonnement : 30 jours en millisecondes
-const adminCode = "2201018280"; // Code pour générer des abonnements dynamiques
-const subscriptionsFile = path.join(__dirname, 'subscriptions.json');
-
-// Charger les abonnements sauvegardés
-if (fs.existsSync(subscriptionsFile)) {
-  const savedSubscriptions = JSON.parse(fs.readFileSync(subscriptionsFile, 'utf-8'));
-  for (const [userId, expiration] of Object.entries(savedSubscriptions)) {
-    userSubscriptions.set(userId, expiration);
-  }
-}
-
-// Sauvegarder les abonnements dans un fichier
-function saveSubscriptions() {
-  const data = Object.fromEntries(userSubscriptions);
-  fs.writeFileSync(subscriptionsFile, JSON.stringify(data, null, 2));
-}
 
 // Charger toutes les commandes disponibles
 const commandFiles = fs.readdirSync(path.join(__dirname, '../commands')).filter(file => file.endsWith('.js'));
@@ -39,8 +23,36 @@ function checkSubscription(senderId) {
   if (Date.now() < expirationDate) return true; // Abonnement encore valide
   // Supprimer l'abonnement si expiré
   userSubscriptions.delete(senderId);
-  saveSubscriptions();
   return false;
+}
+
+// Fonction pour afficher les détails de l'abonnement
+async function showSubscriptionDetails(senderId, pageAccessToken) {
+  const expirationDate = userSubscriptions.get(senderId);
+
+  if (!expirationDate) {
+    await sendMessage(senderId, {
+      text: "⛔ Vous n'êtes pas abonné. Veuillez fournir un code d'abonnement valide."
+    }, pageAccessToken);
+    return;
+  }
+
+  const now = Date.now();
+  const subscriptionStartDate = new Date(expirationDate - subscriptionDuration);
+  const subscriptionEndDate = new Date(expirationDate);
+
+  if (now < expirationDate) {
+    await sendMessage(senderId, {
+      text: `📜 **Détails de votre abonnement**\n\n✅ **Début** : ${subscriptionStartDate.toLocaleString()}\n⏳ **Fin** : ${subscriptionEndDate.toLocaleString()}`
+    }, pageAccessToken);
+  } else {
+    await sendMessage(senderId, {
+      text: "❌ Votre abonnement a expiré."
+    }, pageAccessToken);
+    // Supprimer l'abonnement expiré
+    userSubscriptions.delete(senderId);
+    saveSubscriptions();
+  }
 }
 
 // Fonction principale pour gérer les messages entrants
@@ -58,27 +70,15 @@ async function handleMessage(event, pageAccessToken) {
     if (messageText && validCodes.includes(messageText)) {
       const expirationDate = Date.now() + subscriptionDuration;
       userSubscriptions.set(senderId, expirationDate);
-      saveSubscriptions();
-      const expirationDateFormatted = new Date(expirationDate).toLocaleString();
       await sendMessage(senderId, {
-        text: `✅ Code validé ! Votre abonnement est actif jusqu'au ${expirationDateFormatted}.`
-      }, pageAccessToken);
-      return;
-    }
-
-    // Génération d'un code dynamique par l'admin
-    if (messageText === adminCode) {
-      const newCode = Math.floor(100000 + Math.random() * 900000).toString();
-      validCodes.push(newCode);
-      await sendMessage(senderId, {
-        text: `🆕 Nouveau code généré : ${newCode}. Partagez ce code pour activer un abonnement de 30 jours.`
+        text: `✅ Code validé ! Votre abonnement est actif jusqu'au ${new Date(expirationDate).toLocaleString()}.`
       }, pageAccessToken);
       return;
     }
 
     // Demander un abonnement si aucun code valide n'est fourni
     await sendMessage(senderId, {
-      text: `⛔ Vous n'êtes pas abonné. Veuillez fournir un code d'abonnement valide pour activer les fonctionnalités.\n\n💳 Abonnement : 3000 Ar pour 30 jours.\n🌐 Facebook : [Votre profil Facebook](https://www.facebook.com/manarintso.niaina)\n📱 WhatsApp : +261385858330`
+      text: "⛔ Vous n'êtes pas abonné. Veuillez fournir un code d'abonnement valide pour activer les fonctionnalités."
     }, pageAccessToken);
     return;
   }
@@ -89,6 +89,12 @@ async function handleMessage(event, pageAccessToken) {
     await askForImagePrompt(senderId, imageUrl, pageAccessToken);
   } else if (event.message.text) {
     const messageText = event.message.text.trim();
+
+    // Commande "abonnement" pour afficher les détails
+    if (messageText.toLowerCase() === 'abonnement') {
+      await showSubscriptionDetails(senderId, pageAccessToken);
+      return;
+    }
 
     // Commande "stop" pour quitter un mode
     if (messageText.toLowerCase() === 'stop') {
