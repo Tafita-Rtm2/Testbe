@@ -1,98 +1,76 @@
 const axios = require('axios');
+const path = require('path');
 
 module.exports = {
-
-  name: 'gpt4o',
-
-  description: 'Ask a question to GPT-4o',
-
-  author: 'Deku & coffee (fallback API)',
-
+  name: 'chatgpt4-o',
+  description: 'Pose une question à GPT-4o webscrapers ou répond à une image.',
+  author: 'Deku (rest api)',
   async execute(senderId, args, pageAccessToken, sendMessage) {
     const prompt = args.join(' ');
 
     if (!prompt) {
-      return sendMessage(senderId, { text: "Vous êtes sur la commande GPT-4.0 ✔, l'intelligence artificielle de ChatGPT, capable d'effectuer des recherches sur le web et de répondre à vos demandes. Veuillez poser toutes vos questions." }, pageAccessToken);
+      return sendMessage(senderId, { text: "Veuillez entrer une question valide." }, pageAccessToken);
     }
 
-    // Envoyer un message indiquant que GPT-4o est en train de répondre
-    await sendMessage(senderId, { text: '💬 GPT-4o est en train de te répondre ⏳...\n─────★─────' }, pageAccessToken);
-
     try {
-      // Appel de la première API (nouvelle API ajoutée)
-      const response = await callNewPrimaryAPI(prompt, senderId);
+      // Envoyer un message indiquant que GPT-4 est en train de répondre
+      await sendMessage(senderId, { text: '💬 GPT-4o webscrapers est en train de te répondre⏳...\n\n─────★─────' }, pageAccessToken);
 
-      // Si la réponse est vide ou nulle, passer à la deuxième API
-      if (!response || response.trim() === '') {
-        console.log("Nouvelle API primaire a échoué ou a renvoyé une réponse vide, passage à la deuxième API.");
-        throw new Error("Nouvelle API primaire a échoué ou a renvoyé une réponse vide.");
+      // Si le message auquel on répond contient une image
+      if (args.length === 0) {
+        const repliedMessage = await fetchRepliedMessage(senderId, pageAccessToken); // Fonction simulée pour obtenir le message répondu
+        if (repliedMessage && repliedMessage.attachments && repliedMessage.attachments[0].type === 'image') {
+          const imageUrl = repliedMessage.attachments[0].url;
+          const query = "Décris cette image.";
+          await handleImage(senderId, imageUrl, query, sendMessage, pageAccessToken);
+          return;
+        }
       }
 
-      const formattedResponse = formatResponse(response);
-      await handleLongResponse(formattedResponse, senderId, pageAccessToken, sendMessage);
+      // URL pour appeler l'API GPT-4o avec une question
+      const apiUrl = `https://joshweb.click/api/gpt-4o?q=${encodeURIComponent(prompt)}&uid=100${senderId}`;
+      const response = await axios.get(apiUrl);
+
+      const text = response.data.result;
+
+      // Créer un style avec un contour pour la réponse de GPT-4
+      const formattedResponse = `─────★─────\n` +
+                                `✨GPT-4o webscrapers\n\n${text}\n` +
+                                `─────★─────`;
+
+      // Gérer les réponses longues de plus de 2000 caractères
+      const maxMessageLength = 2000;
+      if (formattedResponse.length > maxMessageLength) {
+        const messages = splitMessageIntoChunks(formattedResponse, maxMessageLength);
+        for (const message of messages) {
+          await sendMessage(senderId, { text: message }, pageAccessToken);
+        }
+      } else {
+        await sendMessage(senderId, { text: formattedResponse }, pageAccessToken);
+      }
 
     } catch (error) {
-      console.error('Erreur avec la nouvelle API primaire ou réponse vide:', error);
-
-      // Tentative avec la deuxième API
-      try {
-        const fallbackResponse = await callPrimaryAPI(prompt, senderId);
-
-        if (!fallbackResponse || fallbackResponse.trim() === '') {
-          console.log("Deuxième API a échoué ou a renvoyé une réponse vide, passage à la troisième API.");
-          throw new Error("Deuxième API a échoué ou a renvoyé une réponse vide.");
-        }
-
-        const formattedFallbackResponse = formatResponse(fallbackResponse);
-        await handleLongResponse(formattedFallbackResponse, senderId, pageAccessToken, sendMessage);
-
-      } catch (secondaryError) {
-        console.error('Erreur avec la deuxième API ou réponse vide:', secondaryError);
-
-        // Tentative avec la troisième API en cas d'erreur ou de réponse vide des deux premières
-        try {
-          const finalFallbackResponse = await callSecondaryAPI(prompt, senderId);
-
-          if (!finalFallbackResponse || finalFallbackResponse.trim() === '') {
-            throw new Error("Troisième API a échoué ou a renvoyé une réponse vide.");
-          }
-
-          const formattedFinalFallbackResponse = formatResponse(finalFallbackResponse);
-          await handleLongResponse(formattedFinalFallbackResponse, senderId, pageAccessToken, sendMessage);
-
-        } catch (finalError) {
-          console.error('Erreur avec la troisième API ou réponse vide:', finalError);
-          await sendMessage(senderId, { text: 'Désolé, je n\'ai pas pu obtenir de réponse pour cette question.' }, pageAccessToken);
-        }
-      }
+      console.error('Error calling GPT-4 API:', error);
+      // Message de réponse d'erreur
+      await sendMessage(senderId, { text: 'Désolé, une erreur est survenue. Veuillez réessayer plus tard.' }, pageAccessToken);
     }
   }
 };
 
-// Fonction pour appeler la nouvelle API primaire
-async function callNewPrimaryAPI(prompt, senderId) {
-  const apiUrl = `https://ccprojectapis.ddns.net/api/gpt4turbo?q=${encodeURIComponent(prompt)}&id=${senderId}`;
-  const response = await axios.get(apiUrl);
-  return response.data?.response || "";
-}
+// Fonction pour gérer les images
+async function handleImage(senderId, imageUrl, query, sendMessage, pageAccessToken) {
+  try {
+    const apiUrl = `https://joshweb.click/api/gpt-4o?q=hi&uid=${encodeURIComponent(query)}&url=${encodeURIComponent(imageUrl)}`;
+    const { data } = await axios.get(apiUrl);
+    const formattedResponse = `─────★─────\n` +
+                              `✨GPT-4o Image🤖🇲🇬\n\n${data.gemini}\n` +
+                              `─────★─────`;
 
-// Fonction pour appeler l'API primaire (ancienne première API, maintenant deuxième)
-async function callPrimaryAPI(prompt, senderId) {
-  const apiUrl = `https://joshweb.click/api/gpt-4o?q=${encodeURIComponent(prompt)}&uid=${senderId}`;
-  const response = await axios.get(apiUrl);
-  return response.data?.result || "";
-}
-
-// Fonction pour appeler l'API secondaire (ancienne deuxième API, maintenant troisième)
-async function callSecondaryAPI(prompt, senderId) {
-  const apiUrl = `https://api.kenliejugarap.com/blackbox?text=${encodeURIComponent(prompt)}`;
-  const response = await axios.get(apiUrl);
-  return response.data?.response || "";
-}
-
-// Fonction pour formater la réponse avec un style et un contour
-function formatResponse(text) {
-  return `─────★─────\n✨ GPT-4o 🤖\n\n${text}\n─────★─────`;
+    await sendMessage(senderId, { text: formattedResponse }, pageAccessToken);
+  } catch (error) {
+    console.error('Error handling image:', error);
+    await sendMessage(senderId, { text: "Désolé, je n'ai pas pu analyser l'image." }, pageAccessToken);
+  }
 }
 
 // Fonction pour découper les messages en morceaux de 2000 caractères
@@ -103,16 +81,3 @@ function splitMessageIntoChunks(message, chunkSize) {
   }
   return chunks;
 }
-
-// Fonction pour gérer les messages longs de plus de 2000 caractères
-async function handleLongResponse(response, senderId, pageAccessToken, sendMessage) {
-  const maxMessageLength = 2000;
-  if (response.length > maxMessageLength) {
-    const messages = splitMessageIntoChunks(response, maxMessageLength);
-    for (const message of messages) {
-      await sendMessage(senderId, { text: message }, pageAccessToken);
-    }
-  } else {
-    await sendMessage(senderId, { text: response }, pageAccessToken);
-  }
-      }
