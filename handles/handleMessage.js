@@ -34,7 +34,7 @@ function generateSubscriptionCode() {
   return code;
 }
 
-// Fonction pour sauvegarder l'état des abonnements
+// Fonction pour sauvegarder les abonnements
 function saveSubscriptions() {
   const data = JSON.stringify(Object.fromEntries(userSubscriptions), null, 2);
   fs.writeFileSync('./subscriptions.json', data);
@@ -61,20 +61,20 @@ async function handleMessage(event, pageAccessToken) {
   const senderId = event.sender.id;
   const messageText = event.message.text ? event.message.text.trim() : null;
 
-  // Vérification de l'abonnement de l'utilisateur
-  const isSubscribed = checkSubscription(senderId);
-
-  // Gestion des codes administrateurs pour générer un nouveau code d'abonnement
+  // Gestion du code administrateur pour générer un nouveau code
   if (messageText === adminCode) {
     const newCode = generateSubscriptionCode();
     await sendMessage(senderId, {
-      text: `✅ Nouveau code d'abonnement généré : ${newCode}.\nVous pouvez le partager avec un utilisateur pour activer un abonnement.`
+      text: `✅ Nouveau code généré : ${newCode}\nCe code peut être utilisé pour activer un abonnement de 30 jours.`
     }, pageAccessToken);
     return;
   }
 
-  // Gestion des utilisateurs non abonnés
+  // Vérification de l'abonnement de l'utilisateur
+  const isSubscribed = checkSubscription(senderId);
+
   if (!isSubscribed) {
+    // Validation d'un code d'abonnement
     if (messageText && validCodes.includes(messageText)) {
       const expirationDate = Date.now() + subscriptionDuration;
       userSubscriptions.set(senderId, expirationDate);
@@ -83,18 +83,19 @@ async function handleMessage(event, pageAccessToken) {
       const expirationDateFormatted = new Date(expirationDate).toLocaleString();
 
       await sendMessage(senderId, {
-        text: `✅ Code validé !\n📅 Début de l'abonnement : ${activationDate.toLocaleString()}\n📅 Expiration : ${expirationDateFormatted}\n\nMerci pour votre abonnement !`
+        text: `✅ Code validé !\n📅 Début : ${activationDate.toLocaleString()}\n🔓 Expiration : ${expirationDateFormatted}\n\nMerci pour votre abonnement !`
       }, pageAccessToken);
       return;
     }
 
+    // Avertir l'utilisateur qu'il n'est pas abonné
     await sendMessage(senderId, {
-      text: `⛔ Vous n'êtes pas abonné.\n\nVeuillez fournir un code d'abonnement valide pour activer les fonctionnalités.\n\n🔗 Facebook : [Cliquez ici](https://www.facebook.com/manarintso.niaina)\n📞 WhatsApp : +261385858330\n💰 Prix : 3000 Ar pour 30 jours.`
+      text: `⛔ Vous n'êtes pas abonné.\n\nPour activer votre abonnement :\n- 🔗 [Mon Facebook](https://www.facebook.com/manarintso.niaina)\n- 📞 WhatsApp : +261385858330\n- 💰 Prix : 3000 Ar pour 30 jours.`
     }, pageAccessToken);
     return;
   }
 
-  // Gestion des commandes après vérification de l'abonnement
+  // Gestion des autres commandes pour les utilisateurs abonnés
   if (messageText.toLowerCase() === 'abonnement') {
     const expirationDate = userSubscriptions.get(senderId);
     const activationDate = new Date(expirationDate - subscriptionDuration);
@@ -102,21 +103,25 @@ async function handleMessage(event, pageAccessToken) {
     const activationDateFormatted = activationDate.toLocaleString();
 
     await sendMessage(senderId, {
-      text: `📅 Votre abonnement est actif !\n\n🔐 Début : ${activationDateFormatted}\n🔓 Expiration : ${expirationDateFormatted}\n\nMerci de rester avec nous !`
+      text: `📅 Abonnement actif !\n\n🔐 Début : ${activationDateFormatted}\n🔓 Expiration : ${expirationDateFormatted}\n\nMerci pour votre fidélité !`
     }, pageAccessToken);
     return;
   }
 
-  // Gestion des autres commandes ou messages
+  // Gestion des images
   if (event.message.attachments && event.message.attachments[0].type === 'image') {
     const imageUrl = event.message.attachments[0].payload.url;
     await askForImagePrompt(senderId, imageUrl, pageAccessToken);
-  } else if (event.message.text) {
+    return;
+  }
+
+  // Vérification des commandes
+  if (messageText) {
     const args = messageText.split(' ');
     const commandName = args[0].toLowerCase();
     const command = commands.get(commandName);
 
-    // Commande "stop" pour quitter un mode
+    // Commande pour quitter un mode
     if (messageText.toLowerCase() === 'stop') {
       userStates.delete(senderId);
       await sendMessage(senderId, { text: "🔓 Vous avez quitté le mode actuel." }, pageAccessToken);
@@ -130,7 +135,7 @@ async function handleMessage(event, pageAccessToken) {
       return;
     }
 
-    // Vérification et exécution des commandes existantes
+    // Exécution des commandes existantes
     if (command) {
       userStates.set(senderId, { lockedCommand: commandName });
       return await command.execute(senderId, args.slice(1), pageAccessToken, sendMessage);
@@ -141,11 +146,11 @@ async function handleMessage(event, pageAccessToken) {
   }
 }
 
-// Fonction pour demander le prompt pour une image
+// Fonction pour demander un prompt pour une image
 async function askForImagePrompt(senderId, imageUrl, pageAccessToken) {
   userStates.set(senderId, { awaitingImagePrompt: true, imageUrl: imageUrl });
   await sendMessage(senderId, {
-    text: "📷 Image reçue. Que voulez-vous que je fasse avec cette image ?"
+    text: "📷 Image reçue. Que voulez-vous faire avec cette image ?"
   }, pageAccessToken);
 }
 
@@ -169,7 +174,7 @@ async function analyzeImageWithPrompt(senderId, imageUrl, prompt, pageAccessToke
   }
 }
 
-// Fonction pour appeler l'API Gemini pour analyser une image avec un prompt
+// Fonction pour appeler l'API Gemini
 async function analyzeImageWithGemini(imageUrl, prompt) {
   const geminiApiEndpoint = 'https://sandipbaruwal.onrender.com/gemini2';
 
