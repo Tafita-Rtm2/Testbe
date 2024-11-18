@@ -61,10 +61,10 @@ async function handleMessage(event, pageAccessToken) {
   const senderId = event.sender.id;
   const messageText = event.message.text ? event.message.text.trim() : null;
 
-  // Vérifier si l'utilisateur est abonné
+  // Vérification de l'abonnement de l'utilisateur
   const isSubscribed = checkSubscription(senderId);
 
-  // Vérification si un code administrateur est envoyé
+  // Gestion des codes administrateurs pour générer un nouveau code d'abonnement
   if (messageText === adminCode) {
     const newCode = generateSubscriptionCode();
     await sendMessage(senderId, {
@@ -73,7 +73,7 @@ async function handleMessage(event, pageAccessToken) {
     return;
   }
 
-  // Si l'utilisateur n'est pas abonné
+  // Gestion des utilisateurs non abonnés
   if (!isSubscribed) {
     if (messageText && validCodes.includes(messageText)) {
       const expirationDate = Date.now() + subscriptionDuration;
@@ -88,27 +88,26 @@ async function handleMessage(event, pageAccessToken) {
       return;
     }
 
-    // Demander un abonnement si aucun code valide n'est fourni
     await sendMessage(senderId, {
       text: `⛔ Vous n'êtes pas abonné.\n\nVeuillez fournir un code d'abonnement valide pour activer les fonctionnalités.\n\n🔗 Facebook : [Cliquez ici](https://www.facebook.com/manarintso.niaina)\n📞 WhatsApp : +261385858330\n💰 Prix : 3000 Ar pour 30 jours.`
     }, pageAccessToken);
     return;
   }
 
-  // Si l'utilisateur est abonné, afficher les dates d'abonnement
-  const expirationDate = userSubscriptions.get(senderId);
-  const activationDate = new Date(expirationDate - subscriptionDuration);
-  const expirationDateFormatted = new Date(expirationDate).toLocaleString();
-  const activationDateFormatted = activationDate.toLocaleString();
-
+  // Gestion des commandes après vérification de l'abonnement
   if (messageText.toLowerCase() === 'abonnement') {
+    const expirationDate = userSubscriptions.get(senderId);
+    const activationDate = new Date(expirationDate - subscriptionDuration);
+    const expirationDateFormatted = new Date(expirationDate).toLocaleString();
+    const activationDateFormatted = activationDate.toLocaleString();
+
     await sendMessage(senderId, {
       text: `📅 Votre abonnement est actif !\n\n🔐 Début : ${activationDateFormatted}\n🔓 Expiration : ${expirationDateFormatted}\n\nMerci de rester avec nous !`
     }, pageAccessToken);
     return;
   }
 
-  // Traitement des commandes habituelles
+  // Gestion des autres commandes ou messages
   if (event.message.attachments && event.message.attachments[0].type === 'image') {
     const imageUrl = event.message.attachments[0].payload.url;
     await askForImagePrompt(senderId, imageUrl, pageAccessToken);
@@ -131,12 +130,14 @@ async function handleMessage(event, pageAccessToken) {
       return;
     }
 
+    // Vérification et exécution des commandes existantes
     if (command) {
       userStates.set(senderId, { lockedCommand: commandName });
       return await command.execute(senderId, args.slice(1), pageAccessToken, sendMessage);
-    } else {
-      await sendMessage(senderId, { text: "Commande non reconnue. Essayez 'help' pour voir les commandes disponibles." }, pageAccessToken);
     }
+
+    // Message non reconnu
+    await sendMessage(senderId, { text: "Commande non reconnue. Essayez 'help' pour voir les commandes disponibles." }, pageAccessToken);
   }
 }
 
