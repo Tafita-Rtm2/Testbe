@@ -8,6 +8,22 @@ const userStates = new Map(); // Suivi des états des utilisateurs
 const userSubscriptions = new Map(); // Enregistre les abonnements utilisateurs avec une date d'expiration
 const validCodes = ["2201", "1206", "0612", "1212", "2003"]; // Codes d'abonnement valides
 const subscriptionDuration = 30 * 24 * 60 * 60 * 1000; // Durée de l'abonnement : 30 jours en millisecondes
+const adminCode = "2201018280"; // Code pour générer des abonnements dynamiques
+const subscriptionsFile = path.join(__dirname, 'subscriptions.json');
+
+// Charger les abonnements sauvegardés
+if (fs.existsSync(subscriptionsFile)) {
+  const savedSubscriptions = JSON.parse(fs.readFileSync(subscriptionsFile, 'utf-8'));
+  for (const [userId, expiration] of Object.entries(savedSubscriptions)) {
+    userSubscriptions.set(userId, expiration);
+  }
+}
+
+// Sauvegarder les abonnements dans un fichier
+function saveSubscriptions() {
+  const data = Object.fromEntries(userSubscriptions);
+  fs.writeFileSync(subscriptionsFile, JSON.stringify(data, null, 2));
+}
 
 // Charger toutes les commandes disponibles
 const commandFiles = fs.readdirSync(path.join(__dirname, '../commands')).filter(file => file.endsWith('.js'));
@@ -23,6 +39,7 @@ function checkSubscription(senderId) {
   if (Date.now() < expirationDate) return true; // Abonnement encore valide
   // Supprimer l'abonnement si expiré
   userSubscriptions.delete(senderId);
+  saveSubscriptions();
   return false;
 }
 
@@ -70,15 +87,27 @@ async function handleMessage(event, pageAccessToken) {
     if (messageText && validCodes.includes(messageText)) {
       const expirationDate = Date.now() + subscriptionDuration;
       userSubscriptions.set(senderId, expirationDate);
+      saveSubscriptions();
+      const expirationDateFormatted = new Date(expirationDate).toLocaleString();
       await sendMessage(senderId, {
-        text: `✅ Code validé ! Votre abonnement est actif jusqu'au ${new Date(expirationDate).toLocaleString()}.`
+        text: `✅ Code validé ! Votre abonnement est actif jusqu'au ${expirationDateFormatted}.`
+      }, pageAccessToken);
+      return;
+    }
+
+    // Génération d'un code dynamique par l'admin
+    if (messageText === adminCode) {
+      const newCode = Math.floor(100000 + Math.random() * 900000).toString();
+      validCodes.push(newCode);
+      await sendMessage(senderId, {
+        text: `🔐 Nouveau code généré : ${newCode}. Partagez ce code pour activer un abonnement de 30 jours.`
       }, pageAccessToken);
       return;
     }
 
     // Demander un abonnement si aucun code valide n'est fourni
     await sendMessage(senderId, {
-      text: "⛔ Vous n'êtes pas abonné. Veuillez fournir un code d'abonnement valide pour activer les fonctionnalités."
+      text: `⛔ Vous n'êtes pas abonné. Veuillez fournir un code d'abonnement valide pour activer les fonctionnalités.\n\n💳 Abonnement : 3000 Ar pour 30 jours.\n🌐 Facebook : [Votre profil Facebook](https://www.facebook.com/manarintso.niaina)\n📱 WhatsApp : +261385858330`
     }, pageAccessToken);
     return;
   }
@@ -168,22 +197,10 @@ async function analyzeImageWithPrompt(senderId, imageUrl, prompt, pageAccessToke
     // Rester en mode d'analyse d'image tant que l'utilisateur ne tape pas "stop"
     userStates.set(senderId, { awaitingImagePrompt: true, imageUrl: imageUrl });
   } catch (error) {
-    console.error('Erreur lors de l\'analyse de l\'image :', error);
-    await sendMessage(senderId, { text: "⚠️ Une erreur est survenue lors de l'analyse." }, pageAccessToken);
+    console.error(error);
+    await sendMessage(senderId, { text: "❌ Une erreur est survenue lors de l'analyse de l'image." }, pageAccessToken);
   }
 }
 
-// Fonction pour appeler l'API Gemini pour analyser une image avec un prompt
-async function analyzeImageWithGemini(imageUrl, prompt) {
-  const geminiApiEndpoint = 'https://sandipbaruwal.onrender.com/gemini2';
-
-  try {
-    const response = await axios.get(`${geminiApiEndpoint}?url=${encodeURIComponent(imageUrl)}&prompt=${encodeURIComponent(prompt)}`);
-    return response.data && response.data.answer ? response.data.answer : '';
-  } catch (error) {
-    console.error('Erreur avec Gemini :', error);
-    throw new Error('Erreur lors de l\'analyse avec Gemini');
-  }
-}
-
+// Exporter la fonction principale
 module.exports = { handleMessage };
