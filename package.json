@@ -1,24 +1,15 @@
 {
-  "name": "nodejs",
+  "name": "facebook-chatbot",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Facebook Messenger chatbot on Vercel",
+  "main": "utils/webhook.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "vercel dev"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "dependencies": {
-    "@types/node": "^18.0.6",
-    "axios": "^1.7.2",
-    "body-parser": "^1.20.2",
-    "express": "^4.19.2",
-    "node-fetch": "^3.3.2",
-    "request": "^2.88.2",
-    "winston": "^3.13.0"
+    "axios": "^1.5.0"
   },
-  "engines": {
-    "node": "20.x"
-  }
+  "devDependencies": {},
+  "author": "VotreNom",
+  "license": "ISC"
 }
